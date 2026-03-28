@@ -1,5 +1,48 @@
 # ELIM Production App — Changelog
 
+## v5.7.0 (2026-03-28) — Audit Fixes + Performance
+
+Zero-Principles audit identified 26 issues across data integrity, volunteer safety, and performance. This release addresses the top 15.
+
+**Data integrity fixes:**
+- **Firebase write retry** — failed writes now tracked in `_pendingWrites` Set; incoming `elim-sync` events ignored for pending keys; single 5-second retry attempted; prevents stale Firebase data from silently overwriting local changes on spotty venue WiFi
+- **Removed localStorage→Firebase re-seed** — `storage.get` fallback path no longer pushes stale localStorage data to Firebase on reconnect; prevents clobbering newer data from other devices
+- **`JSON.parse(null)` crash guard** — both parse sites in `useStorage` (initial `get` and `elim-sync` handler) now discard null values instead of passing them to `setVal`; prevents white-screen crash if a Firebase node is deleted
+- **Orphaned data cleanup on task deletion** — `removeTask` now deletes corresponding entries from `checks`, `assignments`, `taskNotes`, and `completions`
+- **Orphaned data cleanup on roster removal** — removing a team member clears all their task assignments before removing them from roster; prevents blank/ghost dropdown entries
+- **Accurate task counter** — `totalChecked` now computed by intersecting with live task IDs (`allItems.filter(i => checks[i.id]).length`) instead of counting all keys in `checks` object; prevents 103% progress after task deletion
+- **Atomic `newWeek` reset** — writes `elim3-pending-reset` flag to Firebase before clearing; if interrupted (phone sleeps, network drops), next app load completes the reset automatically via `useEffect` on `loaded`
+
+**Volunteer safety fixes:**
+- **Task deletion confirmation** — `window.confirm()` required before `removeTask`; prevents accidental one-tap task deletion that syncs to all devices
+- **Edit mode restricted to Sam** — ✏️ button in `ChecklistView` only renders when `currentUser === "Sam"`; prevents other volunteers from accidentally entering edit mode and seeing delete buttons
+- **Roster removal confirmation** — updated confirm dialog to warn that assignments will be cleared
+- **Timer auto-start threshold** — timer only auto-starts when `totalChecked >= 2` (was: on first checkbox); prevents accidental single tap from starting the timer and corrupting setup time history
+- **Dependency warning modal readable** — modal card background changed from `S.card` (nearly transparent) to `#1C1A18` (opaque dark)
+
+**Error handling:**
+- **React Error Boundary** — new `ErrorBoundary` class component wraps the full app at mount point (`root.render`); any render-time exception shows "Something went wrong — Tap to Reload" screen instead of permanent white screen
+
+**Performance improvements:**
+- **Memoized `allItems`** — wrapped in `useMemo` keyed on `checklistData`; no longer recomputed on every 1-second timer tick
+- **`React.memo` on `CheckItem`** — prevents 59 task cards from re-rendering every second due to timer updates in parent
+- **Photos removed from load gate** — `c5` (photos loaded flag) removed from `const loaded = ...` gate; app renders immediately, photos load lazily when available
+- **Hoisted static constants** — `cards` array moved from inside `DashboardView` to module scope; `CARD_BASE_STYLE` hoisted from inside `CheckItem` render to module scope
+
+**Storage keys added:** `elim3-pending-reset` (transient, deleted after reset completes)
+
+**UX improvements:**
+- **My Tasks is default view** — app opens to personal task list instead of dashboard; dashboard accessible via back arrow from My Tasks
+- **Checklist version stamp** — `CHECKLIST_VERSION` constant compared against stored `_version` field; when code has newer checklist structure, Sam sees amber "Checklist structure updated — tap to apply" banner; applying writes code constant to Firebase without clearing assignments/notes/photos
+- **Placeholder cards moved to Settings** — Equipment and Purchases cards removed from dashboard nav grid; shown as disabled rows in Settings below About section
+- **Dashboard nav grid reduced** — 3×2 → 2×2 (Power Sequence, I/O Line List, Signal Flow, Repairs)
+- **"Last setup" stat removed from dashboard** — `history[0]` display removed from timer zone; data still accessible in Settings → Setup History
+- **Search bar hidden behind toggle** — checklist search input replaced with 🔍 icon; tapping reveals search input; collapses when cleared and blurred
+
+**Version:** bumped to v5.7.0
+
+---
+
 ## v5.6.0 (2026-02-28) — Repairs CRUD + Checklist Edit Mode + Search + Audio SVG Redesign
 
 **Repairs View — fully editable, Firebase-persisted:**

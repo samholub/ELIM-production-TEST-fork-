@@ -4,7 +4,7 @@ Portable church production setup/teardown checklist app for ELIM Church (The Wel
 
 ---
 
-## Current Status: v5.6.0
+## Current Status: v5.7.0
 
 **Live URL:** https://elim-production.web.app
 
@@ -33,6 +33,14 @@ Portable church production setup/teardown checklist app for ELIM Church (The Wel
 - **Remember-me** — device remembers last selected user
 - **Real-time cross-device sync** — Firebase Realtime Database with localStorage offline fallback
 - **Resilient storage** — graceful degradation: Firebase → localStorage → in-memory
+- **Firebase write retry** — failed writes tracked and retried; stale sync events ignored for pending keys
+- **Error boundary** — render errors show "Tap to Reload" screen instead of permanent white screen
+- **Edit mode restricted** — checklist edit mode (task add/delete) only visible to Sam
+- **Task deletion confirmation** — `confirm()` dialog before removing any task
+- **Atomic weekly reset** — pending-reset flag prevents partial state on interruption
+- **Orphan cleanup** — task deletion and roster removal clean up all supporting data keys
+- **Checklist version stamp** — `CHECKLIST_VERSION` constant enables detection of code-vs-Firebase structure mismatch; Sam sees update banner when code has newer checklist
+- **Search toggle** — checklist search bar hidden behind 🔍 icon to reduce visual noise
 
 ---
 
@@ -82,6 +90,7 @@ The hardcoded `CHECKLIST_DATA` constant in the code is the **canonical source of
 | `elim3-io-config` | I/O line list overrides |
 | `elim3-repairs` | Repairs list |
 | `elim3-checklist-data` | Checklist structure (sections + tasks) |
+| `elim3-pending-reset` | Transient flag for atomic reset (deleted after reset completes) |
 
 ### What Resets Clear vs Preserve
 | Cleared on reset | Preserved across resets |
@@ -145,17 +154,24 @@ elim-production/                  ← C:\Users\sammh\elim-production\
 
 ---
 
+## Default View: My Tasks
+- App opens directly to the user's personal task list (My Tasks) instead of the dashboard
+- Back arrow on My Tasks navigates to dashboard
+- Dashboard is fully functional as a secondary view
+
 ## Dashboard Layout
 - **Header:** Logo (left) · Centered username with ▾ tap-to-switch · ⚙️ gear (right)
 - **Hero:** Stacked progress zone (tappable → full checklist) + timer zone (with picker)
 - **Your Tasks:** Card linking to My Tasks with remaining count
 - **Crew Status:** Per-person progress rows, you sorted first, "Unassigned tasks" row at bottom
-- **Nav Cards:** 3×2 grid — Power Sequence, I/O Line List, Signal Flow, Equipment, Repairs, Purchases
+- **Nav Cards:** 2×2 grid — Power Sequence, I/O Line List, Signal Flow, Repairs
 
 ## Settings Layout
 - **Reset Checklist** (top) — two-tap confirmation
 - **Team Roster** — add/remove members with color assignment
 - **Setup History** — last 52 sessions with date, progress bar, percentage, time
+- **Equipment** — placeholder (coming soon)
+- **Purchases** — placeholder (coming soon)
 - **About** — app version and description
 
 ---
@@ -239,3 +255,7 @@ Managed dynamically via Settings. Default roster: Glenn, Sunny, Omar, Mitch, Mic
 - **No auth:** User selects name on launch, no passwords. Remember-me via localStorage.
 - **Shared state:** All data shared (visible to all users) via Firebase
 - **Hosting:** Firebase Hosting (free tier: 10GB bandwidth/month, 1GB database storage)
+- **Error boundary:** `ErrorBoundary` class component wraps `ElimProductionApp` at mount point. Catches render errors, shows reload prompt. Prevents white-screen crashes from propagating.
+- **Firebase write resilience:** `_pendingWrites` Set tracks keys with in-flight writes. `_startListener` ignores incoming `elim-sync` events for pending keys. Failed writes retry once after 5 seconds.
+- **Atomic reset:** `newWeek` writes `elim3-pending-reset` flag before clearing state. On load, `useEffect` checks for flag and completes interrupted resets.
+- **Performance:** `allItems` memoized via `useMemo(, [checklistData])`. `CheckItem` wrapped in `React.memo`. Photos excluded from initial load gate. Static style objects and arrays hoisted to module scope.

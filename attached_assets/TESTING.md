@@ -4,9 +4,9 @@ Quick validation before taking this into a real Sunday setup.
 
 ## Reported Bugs (pending fix)
 
-### Warning Modal Readability
-- [ ] **Opaque backdrop** — dependency warning modal background fully obscures text behind it
-- [ ] **Warning text readable** — amber warning text, button labels clearly visible against background
+### Warning Modal Readability — FIXED in v5.7.0
+- [x] **Opaque backdrop** — dependency warning modal background fully obscures text behind it
+- [x] **Warning text readable** — amber warning text, button labels clearly visible against background
 
 ### I/O Dante Edit Overflow
 - [ ] **Fields stay on screen** — editing Dante routing from/to fields doesn't overflow past right edge
@@ -34,6 +34,78 @@ Quick validation before taking this into a real Sunday setup.
 - [ ] **"All" in dropdown** — assignment dropdown includes "All" option
 - [ ] **"All" styling** — tasks assigned to "All" have appropriate visual treatment (not orange "yours" unless you're logged in)
 - [ ] **"All" in My Tasks** — tasks assigned to "All" appear in everyone's My Tasks view
+
+---
+
+## v5.7.0 Field Validation
+
+### Data Integrity — Firebase Write Retry
+- [ ] **Offline write preserved** — turn on airplane mode, check a box, turn off airplane mode; checkbox should persist (not revert)
+- [ ] **No stale overwrite** — check a box on Phone A while Phone B is offline; bring Phone B online; Phone A's change should appear on Phone B (not be overwritten)
+- [ ] **Retry fires** — check a box with WiFi off, then reconnect within 10 seconds; the write should reach Firebase after reconnect
+
+### Data Integrity — Task Deletion Cleanup
+- [ ] **Confirm dialog** — in edit mode (as Sam), tapping ✕ shows "Delete this task? This cannot be undone." confirmation
+- [ ] **Cancel preserves task** — tapping Cancel leaves the task intact
+- [ ] **Orphan cleanup** — delete a previously-checked, assigned task with notes; verify `checks`, `assignments`, `taskNotes` no longer contain that task ID (check Firebase console)
+- [ ] **Progress accurate** — delete 2 checked tasks; dashboard percentage should not exceed 100%
+
+### Data Integrity — Atomic Reset
+- [ ] **Normal reset works** — Settings → Reset Checklist clears checkboxes, timer, completions; preserves assignments, notes, photos
+- [ ] **History saved** — after reset, new entry appears in Setup History
+- [ ] **Interrupted reset recovers** — (hard to test manually) if `elim3-pending-reset` exists in Firebase on load, app clears checks/completions/timer automatically
+
+### Volunteer Safety — Edit Mode Gate
+- [ ] **Sam sees edit button** — log in as Sam, go to Checklist; ✏️ button visible next to search
+- [ ] **Others don't see it** — log in as any other name; ✏️ button NOT visible in Checklist
+- [ ] **Edit mode still works** — as Sam, enter edit mode; can add, edit, and delete tasks
+
+### Volunteer Safety — Roster Removal
+- [ ] **Confirmation dialog** — in Settings, removing a member shows confirm with "assignments will be cleared" message
+- [ ] **Assignments cleared** — remove a member who has assigned tasks; their tasks should become unassigned
+- [ ] **Member gone** — removed member no longer appears in login screen or assignment dropdowns
+
+### Volunteer Safety — Timer Threshold
+- [ ] **First box doesn't start timer** — check one box; timer should NOT auto-start
+- [ ] **Second box starts timer** — check a second box; timer should auto-start
+- [ ] **Uncheck doesn't stop** — uncheck one of the two boxes; timer should keep running
+
+### Error Handling
+- [ ] **Error boundary renders** — (hard to test manually) if a component throws, should see "Something went wrong — Tap to Reload" instead of white screen
+- [ ] **Reload button works** — tapping "Tap to Reload" refreshes the page
+
+### Performance
+- [ ] **App loads without waiting for photos** — on slow connection, app should be interactive before photos finish loading
+- [ ] **No visible jank** — scroll through full checklist with timer running; should be smooth on mobile
+
+### Default View — My Tasks
+- [ ] **App opens to My Tasks** — after login, user sees their personal task list, not the dashboard
+- [ ] **Back arrow to dashboard** — tapping ← on My Tasks navigates to dashboard
+- [ ] **Dashboard fully functional** — dashboard shows progress, timer, crew status, nav cards as before
+- [ ] **Dashboard header correct** — Logo (left), centered username with ▾, ⚙️ gear (right); no back arrow on dashboard
+- [ ] **No navigation loop** — going My Tasks → Dashboard → back → should return to My Tasks, not loop
+
+### Checklist Version Stamp
+- [ ] **No banner when current** — if `_version` in Firebase matches `CHECKLIST_VERSION`, no banner shown
+- [ ] **Banner for Sam** — if versions differ and user is Sam, amber "Checklist structure updated" banner appears at top of checklist
+- [ ] **Banner not shown to others** — if versions differ and user is NOT Sam, no banner shown
+- [ ] **Apply works** — tapping "Apply Update" writes code constant to Firebase; banner disappears
+- [ ] **Assignments survive** — applying update does not clear task assignments, notes, or photos
+
+### Search Toggle
+- [ ] **Search icon visible** — 🔍 icon visible in checklist toolbar (same row as edit button if Sam)
+- [ ] **Tap reveals input** — tapping 🔍 shows the search text input
+- [ ] **Search works** — typing filters tasks as before
+- [ ] **Collapses when cleared** — clearing search text and tapping away hides the input back to icon
+- [ ] **Edit + search combo** — search and edit mode still work together when both active
+
+### Placeholders in Settings
+- [ ] **Equipment in Settings** — Equipment row visible in Settings below About, shows "Coming soon"
+- [ ] **Purchases in Settings** — Purchases row visible in Settings below About, shows "Coming soon"
+- [ ] **Not on dashboard** — neither Equipment nor Purchases appears in dashboard nav grid
+
+### JSON Null Guard
+- [ ] **Null doesn't crash** — (test via Firebase console) set `elim3-checks` to `null` in Firebase; app should not white-screen; should fall back to empty state
 
 ---
 
@@ -335,7 +407,7 @@ Quick validation before taking this into a real Sunday setup.
 - [ ] **No auto-expand** — checklist opens with all sections collapsed when navigated from hero?
 - [ ] **Timer isolated** — tapping timer controls doesn't accidentally navigate to checklist?
 - [ ] **Timer picker** — X button in top-right of picker panel, presets and custom input work?
-- [ ] **History line** — "Last: {date} — {pct}% in {time}" visible below timer?
+- [ ] **No history line** — "Last: {date}" stat NOT shown on dashboard (moved to Settings → Setup History)
 
 ## Header (v5.3.0)
 
@@ -368,9 +440,11 @@ Quick validation before taking this into a real Sunday setup.
 - [ ] **Centered** — badge vertically centered in the card?
 - [ ] **Correct tasks** — only tasks with power sequence numbers show the badge?
 
-## Navigation Cards (v5.3.0)
+## Navigation Cards (v5.7.0 — updated)
 
-- [ ] **3×2 grid** — Power Sequence, I/O Line List, Signal Flow, Equipment, Repairs, Purchases?
+- [ ] **2×2 grid** — Power Sequence, I/O Line List, Signal Flow, Repairs?
+- [ ] **No Equipment card** — Equipment placeholder moved to Settings?
+- [ ] **No Purchases card** — Purchases placeholder moved to Settings?
 - [ ] **No Checklist card** — checklist access only via hero "View all →"?
 - [ ] **No Settings card** — settings access only via header ⚙️?
 
@@ -467,6 +541,8 @@ Quick validation before taking this into a real Sunday setup.
 4. **Firebase free tier limits** — 10GB bandwidth/month, 1GB database storage. More than enough for this team size.
 5. **Data persists across deploys** — redeploying the app only replaces code, never touches stored data. Checkboxes, assignments, notes, photos, roster, timer, history, repairs, and checklist structure all survive any number of redeploys.
 6. **Custom checklist tasks don't support dependsOn** — the dependency warning system only works for built-in tasks with `dependsOn` properties. Tasks added via edit mode in the checklist will never show dependency warnings.
+7. **Edit mode gate is name-based** — edit mode is restricted to `currentUser === "Sam"`. This is a weak gate (any volunteer could select "Sam" at login) but prevents accidental entry by the other 15 users. A stronger gate (passcode, settings toggle) is in the backlog.
+8. **Concurrent note edits overwrite** — the entire `elim3-notes` object is written on every save. If two devices edit different tasks' notes simultaneously, last-write-wins applies to the whole object.
 
 ## Known Open Items
 

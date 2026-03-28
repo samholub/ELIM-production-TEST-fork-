@@ -7,7 +7,7 @@ Once resolved, items either:
 - Get added to the code (if it's just information) → update index.html + ELIM-PROJECT.md
 - Get deleted (if it turns out to be nothing)
 
-Last updated: 2026-02-28
+Last updated: 2026-03-28
 
 ---
 
