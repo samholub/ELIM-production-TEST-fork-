@@ -293,6 +293,8 @@ const DEFAULT_IO_LINE_LIST = {
   }
 };
 
+const CHECKLIST_VERSION = "5.7.0";
+
 const CHECKLIST_DATA = [
   {
     id: "pre-setup", title: "Pre-Setup", icon: "🙏", color: "#F59E0B",
@@ -1322,7 +1324,7 @@ function DashboardView({ onNavigate, checks, totalItems, assignments, currentUse
   );
 }
 
-function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, elapsed, running, setRunning, teamMembers, initialFilter, noAutoExpand, checklistData, setChecklistData }) {
+function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, elapsed, running, setRunning, teamMembers, initialFilter, noAutoExpand, checklistData, setChecklistData, showUpdateBanner, onApplyUpdate }) {
   const [manualCollapse, setManualCollapse] = useState({});
   const [filterUser, setFilterUser] = useState(initialFilter || "all");
   const [searchText, setSearchText] = useState("");
@@ -1392,6 +1394,12 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
 
   return (
     <div style={{ padding: "0 16px 100px" }}>
+      {showUpdateBanner && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, margin: "12px 0 4px", padding: "10px 14px", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 10 }}>
+          <span style={{ fontSize: 13, color: "#FBBF24", lineHeight: 1.4 }}>Checklist structure updated — tap to apply</span>
+          <button onClick={onApplyUpdate} style={{ flexShrink: 0, padding: "6px 14px", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: S.sans, background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.45)", color: "#FBBF24", whiteSpace: "nowrap" }}>Apply Update</button>
+        </div>
+      )}
       <div style={{ padding: "14px 0 14px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ flex: 1, height: 8, background: S.progressTrack, borderRadius: 4, overflow: "hidden" }}>
@@ -2286,6 +2294,7 @@ function ElimProductionApp() {
   const [history, setHistory, c8] = useStorage("elim3-history", []);
   const [checklistData, setChecklistData, c9] = useStorage("elim3-checklist-data", CHECKLIST_DATA);
   const [elapsed, setElapsed] = useState(0);
+  const [showChecklistUpdateBanner, setShowChecklistUpdateBanner] = useState(false);
 
   // Derive running from timer state
   const running = !!timerState.startedAt;
@@ -2377,6 +2386,24 @@ function ElimProductionApp() {
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded]);
+
+  // On load: check if checklist structure needs updating (Sam only)
+  useEffect(() => {
+    if (!loaded || currentUser !== "Sam") return;
+    const persistedVersion = _ls.get("elim_checklist_version");
+    if (checklistData._version !== CHECKLIST_VERSION && persistedVersion !== CHECKLIST_VERSION) {
+      setShowChecklistUpdateBanner(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, currentUser]);
+
+  const applyChecklistUpdate = useCallback(() => {
+    const updated = [...CHECKLIST_DATA];
+    updated._version = CHECKLIST_VERSION;
+    _ls.set("elim_checklist_version", CHECKLIST_VERSION);
+    setChecklistData(updated);
+    setShowChecklistUpdateBanner(false);
+  }, [setChecklistData]);
 
   // Derive team lists from roster
   const teamMembers = roster.map(r => r.name);
@@ -2477,7 +2504,7 @@ function ElimProductionApp() {
       <div style={{ height: "calc(48px + env(safe-area-inset-top, 0px))" }} />
       <div ref={contentRef} style={{ maxWidth: 600, margin: "0 auto" }}>
         {view === "dashboard" && <DashboardView onNavigate={navigate} checks={checks} totalItems={totalItems} assignments={assignments} currentUser={currentUser} elapsed={elapsed} running={running} setRunning={setRunning} teamMembers={teamMembers} history={history} remaining={remaining} targetSeconds={targetSeconds} onSetTarget={setTarget} allItems={allItems} />}
-        {view === "checklist" && <ChecklistView {...sharedProps} {...checklistProps} elapsed={elapsed} running={running} setRunning={setRunning} initialFilter={checklistFilter} noAutoExpand={true} />}
+        {view === "checklist" && <ChecklistView {...sharedProps} {...checklistProps} elapsed={elapsed} running={running} setRunning={setRunning} initialFilter={checklistFilter} noAutoExpand={true} showUpdateBanner={showChecklistUpdateBanner} onApplyUpdate={applyChecklistUpdate} />}
         {view === "my-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} checklistData={checklistData} />}
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} />}
         {view === "power-seq" && <PowerSeqView />}
