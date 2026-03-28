@@ -1,0 +1,83 @@
+# CheckItem Layout: Surface Detail + Notes Above the Fold
+
+Single-file React app (`index.html`). Surgical edit to the `CheckItem` component only.
+
+---
+
+## Current state
+
+Inside `CheckItem` (around line 870-920), the render order is:
+
+1. Checkbox + task name (always visible)
+2. Assignee dropdown row + tiny 📌 icon if note exists (always visible)
+3. **Everything below is inside `{expanded && (` — hidden until tap:**
+   - `item.detail` text (static reference info)
+   - Photo slots
+   - Troubleshooting section
+   - Notes editing UI
+
+## What to change
+
+Move `item.detail` and the note preview OUTSIDE the expanded block so they're always visible. The expand area keeps photo slots, troubleshooting, and note editing.
+
+### New render order (top to bottom):
+
+**Always visible (above the fold):**
+1. Checkbox + task name + expand arrow
+2. Assignee dropdown row (remove the old 📌 span from this row)
+3. Detail text — only if `item.detail` exists:
+```jsx
+{item.detail && (
+  <div style={{
+    marginTop: 6, padding: "5px 10px",
+    background: "rgba(255,235,210,0.03)",
+    borderRadius: 8, borderLeft: "3px solid rgba(255,220,180,0.12)",
+    color: S.textDim, fontSize: 13, lineHeight: 1.4,
+    overflow: "hidden", textOverflow: "ellipsis",
+    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+  }}>
+    {item.detail}
+  </div>
+)}
+```
+
+4. Note preview — only if `taskNote` exists AND task is NOT expanded:
+```jsx
+{taskNote && !expanded && (
+  <div style={{
+    marginTop: 4, padding: "5px 10px",
+    background: "rgba(255,200,100,0.04)",
+    borderLeft: "2px solid rgba(255,200,100,0.18)",
+    borderRadius: "0 6px 6px 0",
+    fontSize: 13, color: S.textDim, lineHeight: 1.4,
+    overflow: "hidden", textOverflow: "ellipsis",
+    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+  }}>
+    📌 {taskNote}
+  </div>
+)}
+```
+
+**Inside `{expanded && (` block — only these remain:**
+1. Photo slots (`<PhotoSlots ... />`)
+2. Troubleshooting section (`<TroubleshootingSection ... />`)
+3. Notes editing UI (the `📝 Notes` label + textarea/button — unchanged)
+
+### What to remove
+
+- Remove `item.detail` from inside the expanded block (it's now above the fold, don't show it twice)
+- Remove the old `{taskNote && !editingNote && <span style={{ fontSize: 11, color: S.warn }}>📌</span>}` from the assignee row
+
+### Styling notes
+
+- Detail and note preview use similar but distinct styles — detail has a thicker left border (`3px`) and no emoji, note has a thinner border (`2px`) with 📌
+- Both use `-webkit-line-clamp: 2` to cap at 2 lines with ellipsis
+- Note preview hides when expanded (since the full editing UI is visible in the expand area)
+- Detail stays visible even when expanded (it's static reference, always useful)
+
+### Do NOT change
+
+- The note editing UI inside the expand area (textarea, Save/✕ buttons)
+- The `onAssign`, `onUpdateNote` callbacks
+- The checkbox, task name, power badge, or assignee dropdown behavior
+- Any other component
