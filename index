@@ -1,0 +1,2377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#111010" />
+  <meta name="description" content="ELIM Church Production Setup Checklist" />
+  <title>ELIM Production</title>
+
+  <!-- PWA Manifest (inline base64 data URI) -->
+  <link rel="manifest" href="data:application/json;base64,ewogICJuYW1lIjogIkVMSU0gUHJvZHVjdGlvbiIsCiAgInNob3J0X25hbWUiOiAiRUxJTSIsCiAgInN0YXJ0X3VybCI6ICIuIiwKICAiZGlzcGxheSI6ICJzdGFuZGFsb25lIiwKICAiYmFja2dyb3VuZF9jb2xvciI6ICIjMTExMDEwIiwKICAidGhlbWVfY29sb3IiOiAiIzExMTAxMCIsCiAgImljb25zIjogW10KfQ==" />
+
+  <!-- Prevent flash of white -->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #root {
+      min-height: 100vh;
+      min-height: 100dvh;
+      background: #111010;
+      font-family: system-ui, sans-serif;
+      color: #F0E6D8;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    body { overflow-x: clip; }
+    /* Safe area padding for notched phones */
+    body { padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    /* Loading state */
+    #loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 12px; }
+    #loading .text { font-size: 14px; opacity: 0.5; }
+    /* Prevent pull-to-refresh on mobile */
+    body { overscroll-behavior-y: contain; }
+    /* Smooth scrolling */
+    html { scroll-behavior: smooth; }
+    /* Remove tap highlight on mobile */
+    * { -webkit-tap-highlight-color: transparent; }
+    /* Select styling */
+    select { -webkit-appearance: none; appearance: none; }
+  </style>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <!-- Storage: Firebase Realtime Database with localStorage cache + real-time sync -->
+  <script>
+    // ╔═══════════════════════════════════════════════════════╗
+    // ║  FIREBASE CONFIG — Replace with your project config  ║
+    // ╚═══════════════════════════════════════════════════════╝
+    let _fb = null; // Firebase ref, null if unavailable
+    try {
+      const firebaseConfig = {
+        apiKey: "AIzaSyAq8TGyBunq_8g1z_3lF-zO73taalYfGyg",
+        authDomain: "elim-production.firebaseapp.com",
+        databaseURL: "https://elim-production-default-rtdb.firebaseio.com",
+        projectId: "elim-production",
+        storageBucket: "elim-production.firebasestorage.app",
+        messagingSenderId: "222489117430",
+        appId: "1:222489117430:web:8364febc826417f0dda2d7"
+      };
+      const app = firebase.initializeApp(firebaseConfig);
+      _fb = firebase.database().ref('elim');
+    } catch(e) {
+      console.warn('Firebase unavailable, using localStorage only:', e.message);
+    }
+
+    // Safe localStorage wrapper (some environments like Claude preview block localStorage)
+    const _ls = {
+      get(k) { try { return localStorage.getItem(k); } catch(e) { return null; } },
+      set(k,v) { try { localStorage.setItem(k,v); } catch(e) {} },
+      del(k) { try { localStorage.removeItem(k); } catch(e) {} },
+      keys() { try { const r=[]; for(let i=0;i<localStorage.length;i++) r.push(localStorage.key(i)); return r; } catch(e) { return []; } }
+    };
+
+    // Real-time listeners — notify React when data changes remotely
+    const _listeners = {};
+    function _startListener(key) {
+      if (!_fb || _listeners[key]) return;
+      _listeners[key] = true;
+      _fb.child(key.replace(/\./g, '_')).on('value', (snap) => {
+        const val = snap.val();
+        if (val !== null && val !== undefined) {
+          _ls.set('elim_' + key, val);
+          window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: val } }));
+        }
+      });
+    }
+
+    window.storage = {
+      async get(key, shared) {
+        const fbKey = key.replace(/\./g, '_');
+        _startListener(key);
+        try {
+          if (_fb) {
+            const snap = await _fb.child(fbKey).get();
+            if (snap.exists()) {
+              const val = snap.val();
+              _ls.set('elim_' + key, val);
+              return { key, value: val, shared: !!shared };
+            }
+          }
+          const cached = _ls.get('elim_' + key);
+          if (cached !== null) {
+            if (_fb) _fb.child(fbKey).set(cached).catch(() => {});
+            return { key, value: cached, shared: !!shared };
+          }
+          throw new Error('not found');
+        } catch (e) {
+          const cached = _ls.get('elim_' + key);
+          if (cached !== null) return { key, value: cached, shared: !!shared };
+          throw e;
+        }
+      },
+      async set(key, value, shared) {
+        const fbKey = key.replace(/\./g, '_');
+        _ls.set('elim_' + key, value);
+        _startListener(key);
+        if (_fb) {
+          try { await _fb.child(fbKey).set(value); }
+          catch (e) { console.warn('Firebase write failed:', e.message); }
+        }
+        return { key, value, shared: !!shared };
+      },
+      async delete(key, shared) {
+        const fbKey = key.replace(/\./g, '_');
+        _ls.del('elim_' + key);
+        if (_fb) { try { await _fb.child(fbKey).remove(); } catch(e) {} }
+        return { key, deleted: true, shared: !!shared };
+      },
+      async list(prefix, shared) {
+        const keys = [];
+        try {
+          if (_fb) {
+            const snap = await _fb.get();
+            if (snap.exists()) {
+              Object.keys(snap.val()).forEach(k => {
+                const restored = k.replace(/_/g, '.');
+                if (!prefix || restored.startsWith(prefix)) keys.push(restored);
+              });
+              return { keys, prefix, shared: !!shared };
+            }
+          }
+        } catch(e) {}
+        // Fallback: scan localStorage
+        const pre = 'elim_' + (prefix || '');
+        _ls.keys().forEach(k => { if (k.startsWith(pre)) keys.push(k.replace('elim_', '')); });
+        return { keys, prefix, shared: !!shared };
+      }
+    };
+  </script>
+
+  <!-- React -->
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+</head>
+<body>
+  <div id="root">
+    <div id="loading">
+      <svg width="64" height="64" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="49" stroke="#D4763A" stroke-width="2.5" fill="none" opacity="0.5"/>
+        <g transform="translate(50,50) scale(0.82) translate(-50,-50)">
+          <polyline points="16,30 30,50 16,70" stroke="#D4763A" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter" fill="none"/>
+          <polyline points="34,30 48,50 34,70" stroke="#D4763A" stroke-width="7" stroke-linecap="square" stroke-linejoin="miter" fill="none"/>
+          <rect x="58" y="30" width="6" height="40" fill="#D4763A"/>
+          <rect x="58" y="30" width="22" height="6" fill="#D4763A"/>
+          <rect x="58" y="47" width="17" height="6" fill="#D4763A"/>
+          <rect x="58" y="64" width="22" height="6" fill="#D4763A"/>
+        </g>
+      </svg>
+      <div class="text">Loading ELIM Production...</div>
+    </div>
+  </div>
+
+  <!-- App source — loaded as separate file for easy updates -->
+  <script type="text/babel" data-type="module">
+    // Shim for named imports from React (Babel standalone doesn't handle import { x } from "react")
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    // ═══════════════════════════════════════════
+    // APP CODE (inlined from elim-v5.jsx)
+    // ═══════════════════════════════════════════
+
+    /* INLINE_APP_START */
+
+// ═══════════════════════════════════════════
+// STYLES — Warm Night Theme
+// 3 states: orange (yours), green (done), neutral warm grey (everyone else)
+// ═══════════════════════════════════════════
+const S = {
+  bg: "#111010", card: "rgba(255,235,210,0.03)", cardBorder: "rgba(255,200,140,0.06)",
+  cardHover: "rgba(255,235,210,0.06)", text: "#F0E6D8", textDim: "#B8A894",
+  textMuted: "#7A6E60", accent: "#E8893A", accentGlow: "rgba(232,137,58,0.08)",
+  accentBorder: "rgba(232,137,58,0.2)", accentText: "#E8A050",
+  gradient: "linear-gradient(135deg, #D4763A, #E8A050)",
+  danger: "#E85D5D", success: "#5CB87A", warn: "#F59E0B",
+  // 3-state task backgrounds
+  mine: "rgba(232,137,58,0.05)", mineBorder: "rgba(232,137,58,0.12)",
+  successSoft: "rgba(92,184,122,0.08)", successBorder: "rgba(92,184,122,0.15)",
+  // Neutral for other people's items
+  neutralBar: "rgba(255,220,180,0.2)", progressTrack: "rgba(255,220,180,0.06)",
+  checkboxEmpty: "rgba(255,220,180,0.15)",
+  mono: "'JetBrains Mono', monospace", sans: "'DM Sans', system-ui, sans-serif",
+};
+
+// ═══════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════
+const COLOR_PALETTE = [
+  "#818CF8", "#F59E0B", "#10B981", "#F97316", "#EC4899", "#06B6D4",
+  "#EF4444", "#8B5CF6", "#F43F5E", "#14B8A6", "#A855F7", "#3B82F6",
+  "#D946EF", "#84CC16", "#FB923C", "#22D3EE", "#F472B6", "#34D399",
+  "#FBBF24", "#60A5FA"
+];
+
+const DEFAULT_ROSTER = [
+  { name: "Glenn", color: "#818CF8" }, { name: "Sunny", color: "#F59E0B" },
+  { name: "Omar", color: "#10B981" }, { name: "Mitch", color: "#F97316" },
+  { name: "Michael", color: "#EC4899" }, { name: "Taylor", color: "#06B6D4" },
+  { name: "Seth", color: "#EF4444" }, { name: "Sam", color: "#8B5CF6" },
+  { name: "Bianca", color: "#F43F5E" }, { name: "Bri", color: "#14B8A6" },
+  { name: "Leo", color: "#A855F7" }, { name: "Austin", color: "#3B82F6" },
+  { name: "Tyler", color: "#D946EF" }, { name: "Kolton", color: "#84CC16" },
+  { name: "Savanah", color: "#FB923C" }, { name: "Emily", color: "#22D3EE" },
+];
+
+const DEFAULT_IO_LINE_LIST = {
+  stageBox: {
+    title: "Stage Box Inputs", description: "XLR inputs on the stage box",
+    channels: [
+      { ch: 1, label: "Pastor Mic", type: "XLR", notes: "Wireless receiver" },
+      { ch: 2, label: "Worship Lead Mic", type: "XLR", notes: "" },
+      { ch: 3, label: "Backup Vocal 1", type: "XLR", notes: "" },
+      { ch: 4, label: "Backup Vocal 2", type: "XLR", notes: "" },
+      { ch: 5, label: "Acoustic Guitar DI", type: "DI/XLR", notes: "" },
+      { ch: 6, label: "Electric Guitar DI", type: "DI/XLR", notes: "" },
+      { ch: 7, label: "Bass DI", type: "DI/XLR", notes: "" },
+      { ch: 8, label: "Keys / Piano L", type: "DI/XLR", notes: "" },
+      { ch: 9, label: "Keys / Piano R", type: "DI/XLR", notes: "" },
+      { ch: 10, label: "Kick Drum", type: "XLR", notes: "" },
+      { ch: 11, label: "Snare", type: "XLR", notes: "" },
+      { ch: 12, label: "Overhead L", type: "XLR", notes: "" },
+      { ch: 13, label: "Overhead R", type: "XLR", notes: "" },
+      { ch: 14, label: "Track L", type: "Line", notes: "From ProTools" },
+      { ch: 15, label: "Track R", type: "Line", notes: "From ProTools" },
+      { ch: 16, label: "Click", type: "Line", notes: "In-ear only — NOT to FOH" },
+    ]
+  },
+  outputs: {
+    title: "Main Outputs", description: "FOH and monitor output routing from the Wing",
+    channels: [
+      { ch: "L/R Main", label: "FOH Speakers", destination: "Powered Speakers (Both Sides)" },
+      { ch: "Sub", label: "Subwoofers", destination: "Powered Subs" },
+      { ch: "Aux 1", label: "Worship Lead IEM", destination: "In-ear transmitter" },
+      { ch: "Aux 2", label: "Band IEM Mix", destination: "In-ear transmitter" },
+      { ch: "XLR Out 8", label: "Bianca's IEM", destination: "In-ear transmitter" },
+    ]
+  },
+  danteRouting: {
+    title: "Dante Routing", description: "Dante network audio paths",
+    routes: [
+      { from: "Wing Dante Expansion", to: "Omar/Mitch's ProTools Mac", channels: "All inputs for stream mix (Dante)", protocol: "Dante" },
+      { from: "Wing Dante Expansion", to: "Glenn's ProPresenter Mac", channels: "Dante audio for presentation", protocol: "Dante" },
+      { from: "Wing Dante Expansion", to: "Dante AVIO", channels: "Monitor mix", protocol: "Dante" },
+      { from: "Dante AVIO", to: "ATEM Mini Pro", channels: "Analog Audio IN Ch 1-2", protocol: "Analog" },
+      { from: "Tyler's ProTools Mac", to: "Wing", channels: "Direct recording (USB-C, NOT Dante)", protocol: "USB-C" },
+    ]
+  }
+};
+
+const CHECKLIST_DATA = [
+  {
+    id: "pre-setup", title: "Pre-Setup", icon: "🙏", color: "#F59E0B",
+    items: [
+      { id: "ps-3", task: "Unload trailer / transport gear" },
+      { id: "ps-1", task: "Pray. Make sure everyone is on the same page for assignments." },
+      { id: "ps-2", task: "Assign roles / sections to crew" },
+    ]
+  },
+  {
+    id: "led-wall", title: "LED Wall Setup", icon: "🖥️", color: "#8B5CF6",
+    items: [
+      { id: "lw-1", task: "Assemble panels (45 panels, 9×5 configuration)",
+        detail: "6 boxes total. 104px per square.",
+        photos: [{ slot: "lw1-assembly", label: "Panel assembly reference" }],
+        troubleshooting: [
+          { q: "Panel not lighting up?", a: "Check power connection to that specific panel. Each panel has its own power input." },
+          { q: "Dead pixels / cells?", a: "Note the panel location for cell repair. Swap panel if spare is available." }
+        ]
+      },
+      { id: "lw-2", task: "Connect power cables (4 cables, specific flow order)",
+        photos: [{ slot: "lw2-power-flow", label: "Power cable flow diagram" }, { slot: "lw2-power-connections", label: "Power connection points" }],
+        troubleshooting: []
+      },
+      { id: "lw-3", task: "Run AES50 (CAT6) cables to LED Transmitter at production booth (2 cables)",
+        photos: [{ slot: "lw3-aes50", label: "CAT6 to LED transmitter connection" }],
+        troubleshooting: [
+          { q: "No signal to wall?", a: "Verify CAT6 is plugged into the correct AES50 port, not a standard ethernet port." }
+        ]
+      },
+    ]
+  },
+  {
+    id: "stage-box", title: "Stage Box Setup", icon: "🎤", color: "#EC4899",
+    items: [
+      { id: "sb-1", task: "Setup Stage Box",
+        photos: [{ slot: "sb1-position", label: "Stage box placement" }, { slot: "sb1-rear", label: "Rear connections" }],
+        troubleshooting: [{ q: "Wheels sticking?", a: "Wheels need grease or replacement — check maintenance list." }]
+      },
+      { id: "sb-4", task: "Setup speakers",
+        photos: [{ slot: "sb4-speakers", label: "Speaker positions" }],
+      },
+      { id: "sb-6", task: "Antennae are attached to the stage box",
+        photos: [{ slot: "sb6-antennae", label: "Antenna attachment points" }],
+      },
+      { id: "sb-5", task: "Power on Stage Box", powerSeq: 1 },
+      { id: "sb-2", task: "Run cable lines to stage box",
+        photos: [{ slot: "sb2-cables", label: "Cable run layout" }],
+      },
+      { id: "sb-3", task: "Setup microphones",
+        photos: [{ slot: "sb3-mics", label: "Mic placement reference" }],
+      },
+    ]
+  },
+  {
+    id: "wing-soundboard", title: "Wing Soundboard Setup", icon: "🎛️", color: "#3B82F6",
+    items: [
+      { id: "ws-1", task: "Run AES50 (CAT6) Cable to Wing Soundboard",
+        photos: [{ slot: "ws1-aes50", label: "AES50 connection on Wing" }],
+      },
+      { id: "ws-2", task: "Power on the Wing", powerSeq: 2 },
+      { id: "ws-3", task: "Connect and setup WiFi Router with Wing",
+        photos: [{ slot: "ws3-router", label: "WiFi router to Wing connection" }],
+      },
+      { id: "ws-4", task: "Power on WiFi Router", powerSeq: 3, dependsOn: ["ws-2", "ws-3"] },
+      { id: "ws-5b", task: "Connect Tyler's ProTools Mac to Wing (USB-C direct)",
+        detail: "Tyler's Mac connects directly to Wing via USB-C — NOT through the Dante switch.",
+        photos: [{ slot: "ws5b-tyler-mac", label: "Tyler Mac USB-C to Wing" }],
+      },
+      { id: "ws-5", task: "Connect iPad to Wing Network",
+        detail: "May need to check IP address on Wing",
+        photos: [{ slot: "ws5-ipad-ip", label: "Where to find IP on Wing" }],
+        troubleshooting: [
+          { q: "iPad won't connect to Wing?", a: "Forget the network on iPad, reconnect. Check that WiFi router is powered on and linked to Wing." },
+          { q: "iPad connected but no control?", a: "Verify the IP address on Wing matches the iPad app settings. May need to reboot Wing." }
+        ]
+      },
+      { id: "ws-6", task: "Set iPad to always keep the display on" },
+    ]
+  },
+  {
+    id: "dante-network", title: "Dante Network Setup", icon: "🌐", color: "#10B981",
+    items: [
+      { id: "dn-1", task: "Plug in — but do NOT power on — Dante AVIO cabling (short CAT6)",
+        photos: [{ slot: "dn1-avio", label: "Dante AVIO cable connections" }],
+      },
+      { id: "dn-2", task: "Connect Wing Dante Expansion slot Primary Ethernet to 5-Port Switch",
+        detail: "Wing connects to Ethernet port 5 on the switch. Stage Box connects to Wing AES50 Supermac port A.",
+        photos: [{ slot: "dn2-wing-expansion", label: "Wing Dante expansion slot" }, { slot: "dn2-switch", label: "5-port switch connection" }],
+        troubleshooting: [
+          { q: "Dante not routing audio?", a: "Check that you're using the PRIMARY Dante port on the Wing expansion, not secondary." }
+        ]
+      },
+      { id: "dn-3", task: "Power on the Switch", powerSeq: 4, dependsOn: ["dn-1"],
+        detail: "This also powers on the Dante AVIO" },
+      { id: "dn-4", task: "Connect 5-Port Switch to Dante AVIO",
+        photos: [{ slot: "dn4-switch-avio", label: "Switch to AVIO connection" }],
+      },
+      { id: "dn-5", task: "Connect 5-Port Switch to Omar/Mitch's ProTools Mac (CAT6 to USB-C adapter)",
+        photos: [{ slot: "dn5-switch-mac", label: "CAT6 to USB-C adapter" }],
+      },
+      { id: "dn-6", task: "Connect 5-Port Switch to Glenn's ProPresenter Mac while powered off",
+        photos: [{ slot: "dn6-switch-pp", label: "Connection to ProPresenter Mac" }],
+      },
+    ]
+  },
+  {
+    id: "protools-mac", title: "ProTools Mac Setup", icon: "🎵", color: "#F97316",
+    items: [
+      { id: "pt-1", task: "Power on both ProTools Macs (Tyler's + Omar/Mitch's)", powerSeq: 5 },
+      { id: "pt-2", task: "Check Dante on Omar/Mitch's Mac",
+        detail: "Mac may need to be rebooted to see the network.",
+        troubleshooting: [
+          { q: "Mac doesn't see Dante network?", a: "Reboot the Mac. If still not working, check CAT6 from the 5-port switch, and verify the switch is powered on." },
+          { q: "Dante Controller shows no devices?", a: "Make sure all Dante devices are powered on. Check that all CAT6 cables are fully seated." }
+        ]
+      },
+      { id: "pt-3", task: "Open ProTools Session", dependsOn: ["pt-2"] },
+    ]
+  },
+  {
+    id: "display-setup", title: "Display Setup", icon: "🖥️", color: "#A855F7",
+    items: [
+      { id: "ds-1", task: "Plug LED Transmitter into LED Wall and ProPresenter Mac",
+        photos: [{ slot: "ds1-transmitter", label: "Transmitter to wall" }],
+        troubleshooting: [
+          { q: "Wall showing wrong resolution?", a: "Check ProPresenter output settings. Full screen 5×8 = 832px, scale off. Split screen = 416px, scale on." }
+        ]
+      },
+      { id: "ds-2", task: "Plug Confidence Monitor into Glenn's ProPresenter Mac (USB-C Adapter)",
+        photos: [{ slot: "ds2-confidence", label: "Confidence monitor connection" }],
+      },
+      { id: "ds-3", task: "Power on Confidence Monitor", powerSeq: 6 },
+    ]
+  },
+  {
+    id: "camera-setup", title: "Camera Setup", icon: "📹", color: "#06B6D4",
+    items: [
+      { id: "cs-1b", task: "Setup ATEM Mini Pro",
+        detail: "Setup Resi Encoder alongside ATEM — connect ATEM Control Ethernet to Resi Encoder LAN 1.",
+      },
+      { id: "cs-2", task: "Plug ATEM USB cable into Glenn's ProPresenter Mac",
+        photos: [{ slot: "cs2-atem-usb", label: "ATEM USB to Mac" }],
+      },
+      { id: "cs-1", task: "Plug in camera power and run SDI/HDMI Extender to ATEM Mini Pro",
+        photos: [{ slot: "cs1-camera-atem", label: "Camera to ATEM connection" }],
+      },
+    ]
+  },
+  {
+    id: "propresenter-mac", title: "ProPresenter Mac Setup", icon: "💻", color: "#6366F1",
+    items: [
+      { id: "pp-1", task: "Power on Glenn's ProPresenter Mac", powerSeq: 7 },
+      { id: "pp-2", task: "Check Dante Network",
+        troubleshooting: [
+          { q: "No Dante on ProPresenter Mac?", a: "Same fix as ProTools Mac — reboot. Check CAT6 from switch." }
+        ]
+      },
+      { id: "pp-3", task: "Open ProPresenter",
+        troubleshooting: [
+          { q: "ProPresenter won't detect outputs?", a: "Check System Preferences → Displays. Ensure LED wall and confidence monitor are detected. May need to unplug/replug USB-C adapters." }
+        ]
+      },
+      { id: "pp-4", task: "Verify ProPresenter is outputting correctly to LED Wall, Confidence Monitor, and Dante audio",
+        photos: [{ slot: "pp4-outputs", label: "ProPresenter output settings" }],
+      },
+      { id: "pp-5", task: "Test Pastor / Mami media videos" },
+    ]
+  },
+  {
+    id: "streaming-setup", title: "Streaming Setup", icon: "📡", color: "#EF4444",
+    items: [
+      { id: "ss-1", task: "Power on the Streaming Camera", powerSeq: 8 },
+      { id: "ss-2", task: "Check video input in ProPresenter" },
+      { id: "ss-3", task: "Start Test Stream",
+        detail: "Setup live stream to begin 5 min before start. End test stream before starting live stream.",
+        troubleshooting: [
+          { q: "Stream not going live?", a: "Check Resi login (saved). Verify internet connection. Glenn has walkthrough for setup." }
+        ]
+      },
+      { id: "ss-4", task: "Listen to Test Stream during Line Checks / Rehearsal" },
+    ]
+  },
+  {
+    id: "final-power", title: "Final Power-On", icon: "⚡", color: "#F43F5E",
+    items: [
+      { id: "fp-1", task: "Power on LED Transmitter", powerSeq: 9 },
+      { id: "fp-2", task: "Power on Speakers", powerSeq: 10 },
+      { id: "fp-3", task: "All speakers and subs have sound coming out (Both Sides)",
+        troubleshooting: [
+          { q: "No sound from one side?", a: "Check speaker power and cable run for that side. Verify Wing output routing." }
+        ]
+      },
+      { id: "fp-4", task: "Volume dials are correctly set",
+        photos: [{ slot: "fp4-volume", label: "Correct volume dial positions" }],
+      },
+    ]
+  },
+  {
+    id: "mic-check", title: "Mic Check", icon: "🎙️", color: "#D946EF",
+    items: [
+      { id: "mc-1", task: "Check in-ear and Mic batteries" },
+      { id: "mc-2", task: "Check Pastor's Mic" },
+    ]
+  },
+  {
+    id: "sound-check", title: "Sound Check", icon: "🔊", color: "#0EA5E9",
+    items: [
+      { id: "sc-1", task: "Line Checks" },
+      { id: "sc-2", task: "Track and Click are separate" },
+      { id: "sc-3", task: "ProTools gains are correct" },
+      { id: "sc-4", task: "In-ear Monitor Adjustments" },
+    ]
+  },
+  {
+    id: "pre-service", title: "Pre-Service Checks", icon: "✅", color: "#14B8A6",
+    items: [
+      { id: "psc-1", task: "Transpose button set correctly for keyboardist (Michael-ON / Sunny-OFF)",
+        photos: [{ slot: "psc1-transpose", label: "Transpose button location" }],
+      },
+      { id: "psc-2", task: "Run opening ProPresenter loop" },
+      { id: "psc-3", task: "Play Pre-event music" },
+      { id: "psc-4", task: "Remind worship team to smile / be joyful 😄" },
+    ]
+  },
+  {
+    id: "post-event", title: "Post-Event", icon: "📦", color: "#78716C",
+    items: [
+      { id: "pe-1", task: "Recording session is saved at the end of the event" },
+      { id: "pe-2", task: "Power down speakers FIRST when tearing down",
+        detail: "⚡ Critical: speakers off before anything else. Reverse the power sequence." },
+      { id: "pe-3", task: "Upload file to Dropbox" },
+    ]
+  },
+];
+
+const POWER_SEQUENCE = [
+  { order: 1, equipment: "Stage Box" },
+  { order: 2, equipment: "Wing Sound Board" },
+  { order: 3, equipment: "WiFi Router" },
+  { order: 4, equipment: "Dante Switch / Dante AVIO" },
+  { order: 5, equipment: "ProTools Macs (Tyler + Omar/Mitch)" },
+  { order: 6, equipment: "Confidence Monitor" },
+  { order: 7, equipment: "Glenn's ProPresenter Mac" },
+  { order: 8, equipment: "Streaming Camera" },
+  { order: 9, equipment: "LED Transmitter" },
+  { order: 10, equipment: "Speakers" },
+];
+
+const ALL_ITEMS = CHECKLIST_DATA.flatMap(s => s.items.map(i => ({ ...i, section: s })));
+
+// ═══════════════════════════════════════════
+// HOOKS
+// ═══════════════════════════════════════════
+function useStorage(key, initial, shared = true) {
+  const [val, setVal] = useState(initial);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    window.storage.get(key, shared).then(r => {
+      if (r?.value) setVal(JSON.parse(r.value));
+    }).catch(() => {}).finally(() => setLoaded(true));
+    // Real-time sync: update state when Firebase pushes changes from other devices
+    const handler = (e) => {
+      if (e.detail?.key === key && e.detail?.value) {
+        try { setVal(JSON.parse(e.detail.value)); } catch(err) {}
+      }
+    };
+    window.addEventListener('elim-sync', handler);
+    return () => window.removeEventListener('elim-sync', handler);
+  }, []);
+  const save = useCallback((v) => {
+    setVal(v);
+    window.storage.set(key, JSON.stringify(v), shared).catch(() => {});
+  }, [key, shared]);
+  return [val, save, loaded];
+}
+
+function formatTime(sec) {
+  if (sec < 0) sec = 0;
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` : `${m}:${String(s).padStart(2,"0")}`;
+}
+
+function timerColor(remaining, total) {
+  if (!total || total <= 0) return S.textMuted;
+  const pct = remaining / total;
+  if (pct > 0.5) return "#5CB87A"; // green
+  if (pct > 0.25) return "#F59E0B"; // yellow
+  if (pct > 0) return "#E85D5D"; // red
+  return "#E85D5D";
+}
+
+function useBackSwipe(onBack, contentRef) {
+  useEffect(() => {
+    if (!onBack || !contentRef) return;
+    let startX = 0, startY = 0, tracking = false;
+    
+    const onStart = (e) => {
+      const touch = e.touches[0];
+      // Skip if touch started inside a no-swipe zone (e.g. photo scroll)
+      if (e.target.closest && e.target.closest('[data-no-swipe]')) return;
+      // Skip if touch started in the header/back-button zone (top 80px, left 120px)
+      if (touch.clientY < 80 && touch.clientX < 120) return;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      tracking = true;
+    };
+    
+    const onMove = (e) => {
+      if (!tracking || !contentRef.current) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      
+      // Only follow finger if moving right and horizontal movement dominates
+      if (dx > 0 && dx > Math.abs(dy)) {
+        e.preventDefault();
+        contentRef.current.style.transition = 'none';
+        contentRef.current.style.transform = `translateX(${dx}px)`;
+        contentRef.current.style.opacity = 1 - (dx / window.innerWidth) * 0.3;
+      }
+    };
+    
+    const onEnd = (e) => {
+      if (!tracking || !contentRef.current) return;
+      tracking = false;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - startX;
+      
+      if (dx > 80) { // 80px minimum
+        if (dx > window.innerWidth * 0.35) {
+          // Dragged past threshold - animate out and navigate
+          contentRef.current.style.transition = 'transform 200ms ease-out, opacity 200ms ease-out';
+          contentRef.current.style.transform = 'translateX(100%)';
+          contentRef.current.style.opacity = '0.7';
+          setTimeout(() => {
+            if (contentRef.current) {
+              contentRef.current.style.transition = '';
+              contentRef.current.style.transform = '';
+              contentRef.current.style.opacity = '';
+            }
+            onBack();
+          }, 200);
+        } else {
+          // Below threshold - spring back
+          contentRef.current.style.transition = 'transform 250ms ease-out, opacity 250ms ease-out';
+          contentRef.current.style.transform = 'translateX(0)';
+          contentRef.current.style.opacity = '1';
+          setTimeout(() => {
+            if (contentRef.current) {
+              contentRef.current.style.transition = '';
+            }
+          }, 250);
+        }
+      } else {
+        // No significant movement - reset immediately
+        contentRef.current.style.transition = '';
+        contentRef.current.style.transform = '';
+        contentRef.current.style.opacity = '';
+      }
+    };
+    
+    document.addEventListener("touchstart", onStart, { passive: true });
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd, { passive: true });
+    return () => {
+      document.removeEventListener("touchstart", onStart);
+      document.removeEventListener("touchmove", onMove);
+      document.removeEventListener("touchend", onEnd);
+    };
+  }, [onBack, contentRef]);
+}
+
+// ═══════════════════════════════════════════
+// BRAND LOGO (SVG — matches actual »E mark)
+// ═══════════════════════════════════════════
+function ElimLogo({ size = 64, color = "#D4763A", showCircle = true }) {
+  const s = size;
+  return React.createElement("svg", { width: s, height: s, viewBox: "0 0 100 100", fill: "none", xmlns: "http://www.w3.org/2000/svg", style: { display: "block", flexShrink: 0 } },
+    showCircle && React.createElement("circle", { cx: 50, cy: 50, r: 49, stroke: color, strokeWidth: 2.5, fill: "none", opacity: 0.5 }),
+    // Inner content group — scaled down and centered for breathing room
+    React.createElement("g", { transform: "translate(50,50) scale(0.82) translate(-50,-50)" },
+      // Chevron 1 (right-pointing, sharp corners)
+      React.createElement("polyline", { points: "16,30 30,50 16,70", stroke: color, strokeWidth: 7, strokeLinecap: "square", strokeLinejoin: "miter", fill: "none" }),
+      // Chevron 2 (right-pointing, sharp corners)
+      React.createElement("polyline", { points: "34,30 48,50 34,70", stroke: color, strokeWidth: 7, strokeLinecap: "square", strokeLinejoin: "miter", fill: "none" }),
+      // E — vertical bar
+      React.createElement("rect", { x: 58, y: 30, width: 6, height: 40, fill: color }),
+      // E — top arm
+      React.createElement("rect", { x: 58, y: 30, width: 22, height: 6, fill: color }),
+      // E — middle arm
+      React.createElement("rect", { x: 58, y: 47, width: 17, height: 6, fill: color }),
+      // E — bottom arm
+      React.createElement("rect", { x: 58, y: 64, width: 22, height: 6, fill: color })
+    )
+  );
+}
+
+// ═══════════════════════════════════════════
+// SMALL COMPONENTS
+// ═══════════════════════════════════════════
+function Header({ currentUser, onBack, title, subtitle, onSwitchUser, onSettings, rightContent }) {
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 50, background: "rgba(17,16,16,0.94)", backdropFilter: "blur(12px)", borderBottom: `1px solid ${S.cardBorder}`, padding: "8px 16px", paddingTop: "calc(env(safe-area-inset-top, 0px) + 8px)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
+        {onBack ? (
+          <button onClick={onBack} style={{ background: "none", border: "none", color: S.accent, fontSize: 22, cursor: "pointer", padding: "8px 12px 8px 0", zIndex: 2, display: "flex", alignItems: "center", gap: 6 }}>
+            <span>←</span>
+            <span style={{ fontSize: 18, fontWeight: 700, color: S.text }}>{title}</span>
+          </button>
+        ) : onSwitchUser ? (
+          <ElimLogo size={32} />
+        ) : null}
+        {onSwitchUser ? (
+          <div onClick={onSwitchUser} style={{ position: "absolute", left: 0, right: 0, textAlign: "center", cursor: "pointer", zIndex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: S.text }}>{currentUser} <span style={{ fontSize: 12, color: S.textMuted }}>▾</span></div>
+          </div>
+        ) : !onBack ? (
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: S.text }}>{title}</div>
+            {subtitle && <div style={{ fontSize: 13, color: S.textMuted }}>{subtitle}</div>}
+          </div>
+        ) : (
+          <div style={{ flex: 1 }} />
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, zIndex: 2 }}>
+          {rightContent}
+          {onSettings && <button onClick={onSettings} style={{ background: "none", border: "none", color: S.textMuted, fontSize: 20, cursor: "pointer", padding: "4px 2px 4px 14px" }}>⚙️</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ completed, total }) {
+  const pct = total === 0 ? 0 : Math.round((completed / total) * 100);
+  const allDone = completed === total && total > 0;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
+      <div style={{ flex: 1, height: 4, background: S.progressTrack, borderRadius: 2, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: allDone ? S.success : S.neutralBar, borderRadius: 2, transition: "width 0.3s ease" }} />
+      </div>
+      <span style={{ fontSize: 12, color: S.textMuted, fontFamily: S.mono, minWidth: 36, textAlign: "right" }}>{completed}/{total}</span>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// PHOTO COMPONENT
+// ═══════════════════════════════════════════
+function PhotoSlot({ slot, photos, setPhotos }) {
+  const fileRef = useRef(null);
+  const imageData = photos[slot.slot];
+
+  const handleUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Resize for storage efficiency
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxW = 800, maxH = 600;
+        let w = img.width, h = img.height;
+        if (w > maxW) { h = h * (maxW / w); w = maxW; }
+        if (h > maxH) { w = w * (maxH / h); h = maxH; }
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        const data = canvas.toDataURL("image/jpeg", 0.7);
+        setPhotos(prev => ({ ...prev, [slot.slot]: data }));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const handleRemove = (e) => {
+    e.stopPropagation();
+    if (confirm("Remove this photo?")) {
+      setPhotos(prev => { const n = { ...prev }; delete n[slot.slot]; return n; });
+    }
+  };
+
+  if (imageData) {
+    return (
+      <div style={{ position: "relative", minWidth: 120, height: 80, borderRadius: 8, overflow: "hidden", flexShrink: 0 }}>
+        <img src={imageData} alt={slot.label} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <button onClick={handleRemove} style={{
+          position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: 10,
+          background: "rgba(0,0,0,0.7)", border: "none", color: "#fff", fontSize: 12,
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
+        }}>×</button>
+        <div style={{
+          position: "absolute", bottom: 0, left: 0, right: 0, padding: "2px 6px",
+          background: "rgba(0,0,0,0.6)", fontSize: 9, color: "#ccc", textAlign: "center"
+        }}>{slot.label}</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleUpload} style={{ display: "none" }} />
+      <div onClick={() => fileRef.current?.click()} style={{
+        minWidth: 110, height: 80, borderRadius: 8, flexShrink: 0,
+        background: "rgba(255,235,210,0.03)", border: "1px dashed rgba(255,220,180,0.12)",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        gap: 4, cursor: "pointer"
+      }}>
+        <span style={{ fontSize: 20, opacity: 0.35 }}>📷</span>
+        <span style={{ fontSize: 9, color: S.textMuted, textAlign: "center", padding: "0 6px", lineHeight: 1.2 }}>{slot.label}</span>
+      </div>
+    </>
+  );
+}
+
+function PhotoSlots({ photoSlots, photos, setPhotos }) {
+  if (!photoSlots || photoSlots.length === 0) return null;
+  return (
+    <div data-no-swipe style={{ display: "flex", gap: 8, marginTop: 8, overflowX: "auto", paddingBottom: 4 }}>
+      {photoSlots.map((p, i) => <PhotoSlot key={i} slot={p} photos={photos} setPhotos={setPhotos} />)}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// TROUBLESHOOTING
+// ═══════════════════════════════════════════
+function TroubleshootingSection({ items }) {
+  const [openIdx, setOpenIdx] = useState(null);
+  if (!items || items.length === 0) return null;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: S.warn, marginBottom: 4, letterSpacing: 0.5, textTransform: "uppercase" }}>🔧 Troubleshooting</div>
+      {items.map((item, i) => (
+        <div key={i} style={{ marginBottom: 4 }}>
+          <button onClick={() => setOpenIdx(openIdx === i ? null : i)} style={{
+            width: "100%", textAlign: "left", background: "rgba(245,158,11,0.06)",
+            border: "1px solid rgba(245,158,11,0.15)", borderRadius: 6,
+            padding: "6px 10px", cursor: "pointer", color: "#FBBF24", fontSize: 14, fontFamily: S.sans
+          }}>{openIdx === i ? "▼" : "▶"} {item.q}</button>
+          {openIdx === i && (
+            <div style={{ padding: "8px 10px", marginTop: 2, background: "rgba(255,235,210,0.02)", borderRadius: 6, color: S.textDim, fontSize: 14, lineHeight: 1.5, borderLeft: "3px solid rgba(245,158,11,0.3)" }}>{item.a}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// CHECK ITEM
+// ═══════════════════════════════════════════
+function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUpdateNote, photos, setPhotos, isMine, currentUser, teamMembers, isLast, allChecks }) {
+  const [expanded, setExpanded] = useState(false);
+  const [editingNote, setEditingNote] = useState(false);
+  const [noteText, setNoteText] = useState(taskNote || "");
+  const [depWarning, setDepWarning] = useState(null);
+  const hasExpandable = item.detail || (item.photos?.length > 0) || (item.troubleshooting?.length > 0);
+
+  useEffect(() => { setNoteText(taskNote || ""); }, [taskNote]);
+
+  const handleToggle = () => {
+    if (!checked && item.dependsOn) {
+      const unmet = item.dependsOn.filter(id => !allChecks?.[id]);
+      if (unmet.length > 0) {
+        const depTask = ALL_ITEMS.find(t => t.id === unmet[0]);
+        setDepWarning(depTask ? depTask.task : unmet[0]);
+        return;
+      }
+    }
+    onToggle();
+  };
+
+  const isUnassigned = !assignee && !checked;
+
+  const cardStyle = (() => {
+    const base = { borderRadius: 10, padding: "11px 12px", transition: "all 0.2s ease" };
+    if (checked) return { ...base, background: S.successSoft, border: `1px solid ${S.successBorder}` };
+    if (isUnassigned) return { ...base, background: "rgba(255,235,210,0.02)", border: "1.5px dashed rgba(255,220,180,0.18)", padding: "11px 14px" };
+    if (isMine) return { ...base, background: S.mine, border: `1px solid ${S.mineBorder}`, borderLeft: `3px solid ${S.accent}` };
+    return { ...base, background: S.card, border: `1px solid ${S.cardBorder}` };
+  })();
+
+  return (
+    <div style={cardStyle}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <button onClick={handleToggle} style={{
+          width: 28, height: 28, minWidth: 28, borderRadius: 7,
+          border: `2px solid ${checked ? S.success : S.checkboxEmpty}`,
+          background: checked ? S.success : "transparent",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s ease", flexShrink: 0
+        }}>{checked && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}</button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div onClick={() => hasExpandable && setExpanded(!expanded)} style={{
+            color: checked ? S.textMuted : isUnassigned ? S.textDim : S.text,
+            textDecoration: checked ? "line-through" : "none", opacity: checked ? 0.65 : isUnassigned ? 0.75 : 1,
+            fontSize: 16, lineHeight: 1.45, cursor: hasExpandable ? "pointer" : "default",
+            fontStyle: isUnassigned ? "italic" : "normal"
+          }}>
+            {item.task}
+            {hasExpandable && <span style={{ color: S.textMuted, fontSize: 10, marginLeft: 6 }}>{expanded ? "▼" : "▶"}</span>}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+            <select value={assignee || ""} onChange={e => onAssign(e.target.value)} style={{
+              background: "rgba(255,220,180,0.04)", border: `1px solid ${S.cardBorder}`,
+              borderRadius: 6, color: isMine ? S.accentText : S.textDim, fontSize: 14, padding: "4px 10px",
+              cursor: "pointer", outline: "none", fontFamily: S.sans, fontWeight: isMine ? 600 : 400
+            }}>
+              <option value="">Assign...</option>
+              {(teamMembers || []).map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            {taskNote && !editingNote && <span style={{ fontSize: 11, color: S.warn }}>📌</span>}
+          </div>
+
+          {expanded && (
+            <div style={{ marginTop: 10 }}>
+              {item.detail && (
+                <div style={{ padding: "8px 12px", background: "rgba(255,235,210,0.03)", borderRadius: 8, borderLeft: "3px solid rgba(255,220,180,0.12)", color: S.textDim, fontSize: 14, lineHeight: 1.5, marginBottom: 8 }}>{item.detail}</div>
+              )}
+              <PhotoSlots photoSlots={item.photos} photos={photos} setPhotos={setPhotos} />
+              <TroubleshootingSection items={item.troubleshooting} />
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>📝 Notes</div>
+                {editingNote ? (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <textarea value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Add a note..." rows={2}
+                      style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, padding: "8px 10px", outline: "none", resize: "vertical", fontFamily: S.sans }} />
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      <button onClick={() => { onUpdateNote(noteText); setEditingNote(false); }} style={{ background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 6, color: S.accent, fontSize: 12, padding: "4px 8px", cursor: "pointer", fontFamily: S.sans }}>Save</button>
+                      <button onClick={() => { setNoteText(taskNote || ""); setEditingNote(false); }} style={{ background: "none", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "4px 8px", cursor: "pointer", fontFamily: S.sans }}>✕</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => setEditingNote(true)} style={{
+                    width: "100%", textAlign: "left", background: "rgba(255,235,210,0.02)",
+                    border: `1px dashed ${S.cardBorder}`, borderRadius: 6, padding: "8px 10px",
+                    color: taskNote ? S.textDim : S.textMuted, fontSize: 14, cursor: "pointer", fontFamily: S.sans
+                  }}>{taskNote || "Tap to add a note..."}</button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        {item.powerSeq && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(232,93,93,0.12)", color: "#E88A8A", fontSize: 16, fontWeight: 700, borderRadius: 8, padding: "6px 10px", fontFamily: S.mono, flexShrink: 0 }}>⚡{item.powerSeq}</div>
+        )}
+      </div>
+      {depWarning && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setDepWarning(null)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: S.card, border: `1px solid #F59E0B`, borderRadius: 14, padding: "20px", maxWidth: 340, width: "100%" }}>
+            <div style={{ fontSize: 18, textAlign: "center", marginBottom: 8 }}>⚠️</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: "#F59E0B", textAlign: "center", marginBottom: 6 }}>Dependency Not Complete</div>
+            <div style={{ fontSize: 14, color: S.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 16 }}>"{depWarning}" isn't complete yet. Continue anyway?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setDepWarning(null)} style={{ flex: 1, padding: "10px", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: S.sans }}>Cancel</button>
+              <button onClick={() => { setDepWarning(null); onToggle(); }} style={{ flex: 1, padding: "10px", background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: 8, color: "#F59E0B", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: S.sans }}>Continue</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ═══════════════════════════════════════════
+function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek }) {
+  const [newName, setNewName] = useState("");
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+  const teamMembers = roster.map(r => r.name);
+
+  const getNextColor = () => {
+    const used = new Set(roster.map(r => r.color));
+    return COLOR_PALETTE.find(c => !used.has(c)) || COLOR_PALETTE[roster.length % COLOR_PALETTE.length];
+  };
+
+  const addMember = () => {
+    const name = newName.trim();
+    if (!name || teamMembers.includes(name)) return;
+    setRoster([...roster, { name, color: getNextColor() }]);
+    setNewName("");
+  };
+
+  const removeMember = (name) => {
+    if (!confirm(`Remove ${name} from the roster? Their task assignments will stay until reassigned.`)) return;
+    setRoster(roster.filter(r => r.name !== name));
+    if (currentUser === name) {
+      _ls.del("elim_remember_user");
+      setCurrentUser("");
+    }
+  };
+
+  return (
+    <div style={{ padding: "12px 16px 80px" }}>
+      {/* Reset Checklist — at top for easy access */}
+      <div style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 20 }}>
+        <div style={{ fontSize: 14, color: S.textDim, marginBottom: 12, lineHeight: 1.5 }}>Clear all checkboxes, completions, and timer for a fresh setup. Assignments, notes, photos, and roster are preserved.</div>
+        {confirmingReset ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14, color: S.warn, fontWeight: 600 }}>Clear all progress?</span>
+            <button onClick={() => { onNewWeek(); setConfirmingReset(false); }} style={{
+              background: "rgba(232,93,93,0.15)", border: "1px solid rgba(232,93,93,0.3)",
+              borderRadius: 8, color: "#E88A8A", fontSize: 14, fontWeight: 700, padding: "8px 16px",
+              cursor: "pointer", fontFamily: S.sans
+            }}>Yes, Reset</button>
+            <button onClick={() => setConfirmingReset(false)} style={{
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+              borderRadius: 8, color: S.textMuted, fontSize: 14, padding: "8px 14px",
+              cursor: "pointer", fontFamily: S.sans
+            }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmingReset(true)} style={{
+            background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+            borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, padding: "8px 16px",
+            cursor: "pointer", fontFamily: S.sans
+          }}>🔄 Reset Checklist</button>
+        )}
+      </div>
+
+      {/* Team Roster */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Team Roster ({roster.length})</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <input value={newName} onChange={e => setNewName(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && addMember()}
+          placeholder="New member name..."
+          style={{
+            flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+            borderRadius: 10, color: S.text, fontSize: 14, padding: "10px 14px", outline: "none",
+            fontFamily: S.sans
+          }} />
+        <button onClick={addMember} style={{
+          background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 10,
+          color: S.accent, fontSize: 14, fontWeight: 700, padding: "10px 18px", cursor: "pointer",
+          fontFamily: S.sans, whiteSpace: "nowrap"
+        }}>+ Add</button>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 24 }}>
+        {roster.map(member => (
+          <div key={member.name} style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+            background: member.name === currentUser ? "rgba(232,137,58,0.04)" : S.card,
+            border: `1px solid ${member.name === currentUser ? S.accentBorder : S.cardBorder}`,
+            borderRadius: 10
+          }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 14, background: member.color + "20",
+              border: `1.5px solid ${member.color}40`, display: "flex", alignItems: "center",
+              justifyContent: "center", fontSize: 12, fontWeight: 700, color: member.color, flexShrink: 0
+            }}>{member.name[0]}</div>
+            <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.text }}>{member.name}</span>
+            {member.name === currentUser && <span style={{ fontSize: 10, color: S.accent, fontWeight: 700 }}>YOU</span>}
+            <button onClick={() => removeMember(member.name)} style={{
+              background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+              borderRadius: 8, color: "#E88A8A", fontSize: 13, padding: "4px 10px",
+              cursor: "pointer", fontFamily: S.sans
+            }}>✕</button>
+          </div>
+        ))}
+      </div>
+
+      {/* Setup History */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Setup History</div>
+      {history && history.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 24 }}>
+          {history.map((h, i) => (
+            <div key={i} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+              background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10
+            }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text, minWidth: 90 }}>{h.date}</div>
+              <div style={{ flex: 1, height: 4, background: S.progressTrack, borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ width: `${h.pct}%`, height: "100%", borderRadius: 2, background: h.pct === 100 ? S.success : S.neutralBar }} />
+              </div>
+              <div style={{ fontSize: 12, fontFamily: S.mono, color: h.pct === 100 ? S.success : S.textMuted, minWidth: 36, textAlign: "right" }}>{h.pct}%</div>
+              <div style={{ fontSize: 12, fontFamily: S.mono, color: S.textDim, minWidth: 52, textAlign: "right" }}>{formatTime(h.elapsed)}</div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ padding: "16px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 24 }}>
+          <div style={{ fontSize: 14, color: S.textMuted, textAlign: "center" }}>No setup history yet. History is saved each time you reset the checklist.</div>
+        </div>
+      )}
+
+      {/* App Info */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>About</div>
+      <div style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <ElimLogo size={28} />
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: S.text }}>ELIM Production</div>
+            <div style={{ fontSize: 12, color: S.textMuted }}>v5.6.0</div>
+          </div>
+        </div>
+        <div style={{ fontSize: 12, color: S.textMuted, lineHeight: 1.5 }}>Setup checklist for ELIM Church production team. Data syncs across all devices in real time.</div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// VIEWS
+// ═══════════════════════════════════════════
+function DashboardView({ onNavigate, checks, totalItems, assignments, currentUser, elapsed, running, setRunning, teamMembers, history, remaining, targetSeconds, onSetTarget, allItems }) {
+  const effectiveAllItems = allItems || ALL_ITEMS;
+  const totalChecked = Object.values(checks).filter(Boolean).length;
+  const pct = Math.round((totalChecked / totalItems) * 100);
+  const myItems = effectiveAllItems.filter(i => assignments[i.id] === currentUser);
+  const myDone = myItems.filter(i => checks[i.id]).length;
+  const [showTimerPicker, setShowTimerPicker] = useState(false);
+  const [customMin, setCustomMin] = useState("");
+  const PRESETS = [30, 45, 60, 90];
+
+  // Crew stats: sorted with you first, then by most tasks
+  const people = {};
+  effectiveAllItems.forEach(i => {
+    const a = assignments[i.id];
+    if (!a) return;
+    if (!people[a]) people[a] = { total: 0, done: 0 };
+    people[a].total++;
+    if (checks[i.id]) people[a].done++;
+  });
+  const sortedPeople = Object.entries(people).sort((a, b) => {
+    if (a[0] === currentUser) return -1;
+    if (b[0] === currentUser) return 1;
+    return b[1].total - a[1].total;
+  });
+
+  const cards = [
+    { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
+    { id: "io-list", icon: "🎚️", title: "I/O Line List", subtitle: "Inputs & routing" },
+    { id: "network", icon: "🌐", title: "Signal Flow", subtitle: "Network diagram" },
+    { id: "inventory", icon: "📦", title: "Equipment", subtitle: "Inventory & status" },
+    { id: "repairs", icon: "🔧", title: "Repairs", subtitle: "Pending maintenance" },
+    { id: "purchases", icon: "🛒", title: "Purchases", subtitle: "Want / need list" },
+  ];
+
+  return (
+    <div style={{ padding: "16px" }}>
+      {/* Hero — stacked layout: progress zone (tappable) + timer zone (contained) */}
+      <div style={{ background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 16, padding: "20px", marginBottom: 16 }}>
+        {/* Progress zone — taps navigate to full checklist */}
+        <div onClick={() => onNavigate("checklist")} style={{ cursor: "pointer" }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 48, fontWeight: 800, fontFamily: S.mono, background: S.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{pct}%</div>
+            <div style={{ fontSize: 14, color: S.textDim, marginTop: 2 }}>{totalChecked} of {totalItems} tasks · <span style={{ color: S.accentText }}>View all →</span></div>
+          </div>
+          <div style={{ marginTop: 14, height: 8, background: S.progressTrack, borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, transition: "width 0.5s ease", background: pct === 100 ? S.success : S.gradient }} />
+          </div>
+        </div>
+
+        {/* Divider between progress and timer */}
+        <div style={{ height: 1, background: "rgba(255,220,180,0.1)", margin: "14px 0" }} />
+
+        {/* Timer zone — stopPropagation prevents navigating to checklist */}
+        <div onClick={e => e.stopPropagation()}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div onClick={() => setRunning(!running)} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+              <div style={{ fontFamily: S.mono, fontSize: 20, fontWeight: 700, color: targetSeconds ? timerColor(remaining, targetSeconds) : running ? S.textDim : S.textMuted }}>
+                {targetSeconds ? formatTime(remaining) : formatTime(elapsed)}
+              </div>
+              <div style={{ fontSize: 11, color: targetSeconds ? timerColor(remaining, targetSeconds) : S.textMuted }}>
+                {targetSeconds ? (remaining === 0 ? "⏰ Time!" : running ? "⏱ Counting down" : "▶ Tap to start") : (running ? "⏱ Running" : "▶ Tap to start")}
+              </div>
+            </div>
+            <button onClick={() => setShowTimerPicker(true)} style={{
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 8,
+              color: S.accentText, fontSize: 12, fontWeight: 600, padding: "5px 12px", cursor: "pointer", fontFamily: S.sans
+            }}>{targetSeconds ? "Change" : "⏱ Set Timer"}</button>
+          </div>
+
+          {/* Timer picker */}
+          {showTimerPicker && (
+            <div style={{ marginTop: 10, padding: "12px", background: "rgba(255,235,210,0.04)", borderRadius: 10, border: `1px solid ${S.cardBorder}`, position: "relative" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Set Countdown</div>
+                <button onClick={() => setShowTimerPicker(false)} style={{
+                  background: "none", border: "none", color: S.textMuted, fontSize: 18, cursor: "pointer", padding: "0 2px", lineHeight: 1
+                }}>✕</button>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                {PRESETS.map(min => (
+                  <button key={min} onClick={() => { onSetTarget(min); setShowTimerPicker(false); }} style={{
+                    flex: 1, padding: "10px 6px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                    cursor: "pointer", fontFamily: S.mono, border: `1px solid ${S.accentBorder}`,
+                    background: S.accentGlow, color: S.accentText
+                  }}>{min}m</button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <input type="number" value={customMin} onChange={e => setCustomMin(e.target.value)}
+                  placeholder="Custom min" min="1" max="300"
+                  style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 8, color: S.text, fontSize: 14, padding: "8px 12px", outline: "none", fontFamily: S.mono }} />
+                <button onClick={() => { const m = parseInt(customMin); if (m > 0) { onSetTarget(m); setShowTimerPicker(false); setCustomMin(""); } }} style={{
+                  padding: "8px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                  cursor: "pointer", fontFamily: S.sans, border: `1px solid ${S.accentBorder}`,
+                  background: S.accentGlow, color: S.accentText
+                }}>Set</button>
+              </div>
+              {targetSeconds !== null && (
+                <button onClick={() => { onSetTarget(null); setShowTimerPicker(false); }} style={{
+                  width: "100%", marginTop: 8, padding: "8px", borderRadius: 8, fontSize: 12,
+                  cursor: "pointer", fontFamily: S.sans, border: "1px solid rgba(232,93,93,0.2)",
+                  background: "rgba(232,93,93,0.06)", color: "#E88A8A"
+                }}>Remove countdown (use count-up)</button>
+              )}
+            </div>
+          )}
+
+          {/* History stat line */}
+          {history && history.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 12, color: S.textMuted }}>
+              Last: {history[0].date} — {history[0].pct}% in {formatTime(history[0].elapsed)}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Your Tasks callout */}
+      <div onClick={() => onNavigate("my-tasks")} style={{ background: S.mine, border: `1px solid ${S.mineBorder}`, borderRadius: 12, padding: "14px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
+        <div style={{ fontSize: 28, fontWeight: 800, fontFamily: S.mono, color: S.accentText }}>{myDone}/{myItems.length}</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: S.text }}>Your Tasks</div>
+          <div style={{ fontSize: 12, color: S.textDim }}>{myItems.length - myDone} remaining</div>
+        </div>
+        <div style={{ background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 8, color: S.accentText, fontSize: 12, fontWeight: 600, padding: "7px 14px" }}>View →</div>
+      </div>
+
+      {/* Crew status — compact list */}
+      {(() => {
+        const unassignedItems = effectiveAllItems.filter(i => !assignments[i.id]);
+        const unassignedDone = unassignedItems.filter(i => checks[i.id]).length;
+        const showCrew = sortedPeople.length > 0 || unassignedItems.length > 0;
+        if (!showCrew) return null;
+        return (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Crew Status</div>
+            <div style={{ fontSize: 11, color: S.textDim, fontStyle: "italic" }}>tap a name to view their tasks</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {sortedPeople.map(([name, stats]) => {
+              const isMe = name === currentUser;
+              const allDone = stats.done === stats.total;
+              const p = Math.round((stats.done / stats.total) * 100);
+              return (
+                <div key={name} onClick={() => onNavigate("checklist:" + name)} style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                  background: isMe ? S.mine : S.card,
+                  border: `1px solid ${isMe ? S.mineBorder : S.cardBorder}`,
+                  borderRadius: 8, cursor: "pointer",
+                }}>
+                  <div style={{ fontSize: 14, fontWeight: isMe ? 700 : 500, color: isMe ? S.accentText : S.text, minWidth: 70 }}>{name}</div>
+                  <div style={{ flex: 1, height: 4, background: S.progressTrack, borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: `${p}%`, height: "100%", borderRadius: 2, transition: "width 0.3s", background: allDone ? S.success : isMe ? S.accent : S.neutralBar }} />
+                  </div>
+                  <div style={{ fontSize: 12, fontFamily: S.mono, color: allDone ? S.success : S.textMuted, minWidth: 32, textAlign: "right" }}>
+                    {allDone ? "✓" : `${stats.done}/${stats.total}`}
+                  </div>
+                </div>
+              );
+            })}
+            {unassignedItems.length > 0 && (
+              <>
+              <div style={{ height: 1, background: "rgba(255,220,180,0.12)", margin: "8px 0 5px" }} />
+              <div onClick={() => onNavigate("checklist:__unassigned__")} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                background: "rgba(255,235,210,0.02)", border: `1.5px dashed rgba(255,220,180,0.18)`,
+                borderRadius: 8, cursor: "pointer",
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: S.textMuted, fontStyle: "italic", whiteSpace: "nowrap" }}>Unassigned tasks</div>
+                <div style={{ flex: 1, height: 4, background: S.progressTrack, borderRadius: 2, overflow: "hidden" }}>
+                  <div style={{ width: `${unassignedItems.length > 0 ? Math.round((unassignedDone / unassignedItems.length) * 100) : 0}%`, height: "100%", borderRadius: 2, transition: "width 0.3s", background: unassignedDone === unassignedItems.length ? S.success : S.neutralBar }} />
+                </div>
+                <div style={{ fontSize: 12, fontFamily: S.mono, color: unassignedDone === unassignedItems.length ? S.success : S.textMuted, minWidth: 32, textAlign: "right" }}>
+                  {unassignedDone === unassignedItems.length && unassignedItems.length > 0 ? "✓" : `${unassignedDone}/${unassignedItems.length}`}
+                </div>
+              </div>
+              </>
+            )}
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* Nav cards — 3×2 grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {cards.map(card => (
+          <div key={card.id} onClick={() => onNavigate(card.id)} style={{
+            background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 12,
+            padding: "14px 10px", cursor: "pointer", transition: "all 0.15s",
+            fontFamily: S.sans, textAlign: "center"
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = S.accentBorder; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = S.cardBorder; }}>
+            <div style={{ fontSize: 22, marginBottom: 4 }}>{card.icon}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>{card.title}</div>
+            <div style={{ fontSize: 11, color: S.textMuted }}>{card.subtitle}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, elapsed, running, setRunning, teamMembers, initialFilter, noAutoExpand, checklistData, setChecklistData }) {
+  const [manualCollapse, setManualCollapse] = useState({});
+  const [filterUser, setFilterUser] = useState(initialFilter || "all");
+  const [searchText, setSearchText] = useState("");
+  const [editMode, setEditMode] = useState(false);
+  const [addingTaskInSection, setAddingTaskInSection] = useState(null);
+  const [newTaskText, setNewTaskText] = useState("");
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editingTaskText, setEditingTaskText] = useState("");
+
+  const data = checklistData || CHECKLIST_DATA;
+
+  // Update filter if navigated from dashboard crew click
+  useEffect(() => { if (initialFilter) setFilterUser(initialFilter); }, [initialFilter]);
+  
+  // Reset manual collapse when filter/search/edit changes so auto-expand recalculates
+  useEffect(() => { setManualCollapse({}); }, [filterUser, searchText, editMode]);
+
+  const toggleCheck = (itemId) => {
+    const nc = { ...checks, [itemId]: !checks[itemId] };
+    const ncomp = { ...completions };
+    if (nc[itemId]) { ncomp[itemId] = { name: currentUser || "Someone" }; }
+    else { delete ncomp[itemId]; }
+    setChecks(nc); setCompletions(ncomp);
+    if (!running) setRunning(true);
+  };
+
+  const addTaskToSection = (sectionId) => {
+    if (!newTaskText.trim()) { setAddingTaskInSection(null); setNewTaskText(""); return; }
+    const newId = "task-" + Date.now();
+    const updated = JSON.parse(JSON.stringify(data));
+    const sec = updated.find(s => s.id === sectionId);
+    if (sec) sec.items.push({ id: newId, task: newTaskText.trim() });
+    setChecklistData(updated);
+    setNewTaskText("");
+    setAddingTaskInSection(null);
+  };
+
+  const removeTask = (sectionId, taskId) => {
+    const updated = JSON.parse(JSON.stringify(data));
+    const sec = updated.find(s => s.id === sectionId);
+    if (sec) sec.items = sec.items.filter(i => i.id !== taskId);
+    setChecklistData(updated);
+  };
+
+  const saveTaskEdit = (sectionId, taskId) => {
+    if (!editingTaskText.trim()) { setEditingTaskId(null); return; }
+    const updated = JSON.parse(JSON.stringify(data));
+    const sec = updated.find(s => s.id === sectionId);
+    if (sec) { const t = sec.items.find(i => i.id === taskId); if (t) t.task = editingTaskText.trim(); }
+    setChecklistData(updated);
+    setEditingTaskId(null);
+    setEditingTaskText("");
+  };
+
+  const totalItems = data.reduce((s, sec) => s + sec.items.length, 0);
+  const totalChecked = Object.values(checks).filter(Boolean).length;
+  const pct = Math.round((totalChecked / totalItems) * 100);
+
+  const searchLower = searchText.trim().toLowerCase();
+
+  return (
+    <div style={{ padding: "0 16px 100px" }}>
+      <div style={{ padding: "14px 0 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ flex: 1, height: 8, background: S.progressTrack, borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", borderRadius: 4, transition: "width 0.5s ease", background: pct === 100 ? S.success : S.gradient }} />
+          </div>
+          <span style={{ fontFamily: S.mono, fontSize: 14, fontWeight: 700, color: pct === 100 ? S.success : S.accentText, minWidth: 44, textAlign: "right" }}>{pct}%</span>
+        </div>
+      </div>
+
+      {/* Search + edit mode toolbar */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          <input
+            type="text"
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            placeholder="Search tasks..."
+            style={{
+              width: "100%", padding: "8px 32px 8px 12px", borderRadius: 8, fontSize: 14,
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+              color: S.text, fontFamily: S.sans, outline: "none", boxSizing: "border-box"
+            }}
+          />
+          {searchText && (
+            <button onClick={() => setSearchText("")} style={{
+              position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+              background: "rgba(255,220,180,0.1)", border: "none", borderRadius: 10,
+              width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+              color: S.textMuted, fontSize: 12, cursor: "pointer", padding: 0
+            }}>✕</button>
+          )}
+        </div>
+        {setChecklistData && (
+          <button onClick={() => { setEditMode(!editMode); setAddingTaskInSection(null); setEditingTaskId(null); }} style={{
+            padding: "8px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: S.sans,
+            background: editMode ? S.accentGlow : "rgba(255,235,210,0.04)",
+            border: `1px solid ${editMode ? S.accentBorder : S.cardBorder}`,
+            color: editMode ? S.accentText : S.textMuted, whiteSpace: "nowrap"
+          }}>{editMode ? "✓ Done" : "✏️"}</button>
+        )}
+      </div>
+
+      {filterUser !== "all" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, padding: "6px 12px", background: S.mine, border: `1px solid ${S.mineBorder}`, borderRadius: 8 }}>
+          <span style={{ fontSize: 14, color: S.accentText, fontWeight: 600 }}>Showing: {filterUser}</span>
+          <button onClick={() => setFilterUser("all")} style={{ marginLeft: "auto", background: "none", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 13, padding: "4px 10px", cursor: "pointer", fontFamily: S.sans }}>Show All</button>
+        </div>
+      )}
+
+      {data.map((section, secIdx) => {
+        const filteredItems = filterUser === "all" ? section.items : section.items.filter(i => assignments[i.id] === filterUser || !assignments[i.id]);
+        const searchedItems = searchLower ? filteredItems.filter(i => (i.task || i.text || "").toLowerCase().includes(searchLower)) : filteredItems;
+        if (searchedItems.length === 0 && !editMode) return null;
+        const sectionChecked = section.items.filter(i => checks[i.id]).length;
+        const allDone = sectionChecked === section.items.length;
+        const hasActive = sectionChecked > 0 && !allDone;
+        const hasMyTasks = section.items.some(i => assignments[i.id] === currentUser && !checks[i.id]);
+        const hasFilteredTasks = filterUser !== "all" && section.items.some(i => assignments[i.id] === filterUser);
+        const unassignedCount = section.items.filter(i => !assignments[i.id] && !checks[i.id]).length;
+
+        const hasSearchMatch = searchLower && searchedItems.length > 0;
+        const isExpanded = manualCollapse[section.id] !== undefined
+          ? !manualCollapse[section.id]
+          : noAutoExpand
+            ? (hasSearchMatch)
+            : (hasMyTasks || hasActive || hasFilteredTasks || hasSearchMatch);
+
+        const allIncompleteUnassigned = !allDone && unassignedCount > 0 && unassignedCount === section.items.filter(i => !checks[i.id]).length;
+
+        return (
+          <div key={section.id} style={{ marginBottom: isExpanded ? 10 : 0 }}>
+            <div onClick={() => setManualCollapse(p => ({ ...p, [section.id]: isExpanded }))} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 0", cursor: "pointer", userSelect: "none", borderBottom: !isExpanded ? "1px solid rgba(255,220,180,0.08)" : "none" }}>
+              <span style={{ fontSize: 20, opacity: allIncompleteUnassigned ? 0.5 : 1 }}>{section.icon}</span>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 16, fontWeight: 600, color: allDone ? S.success : allIncompleteUnassigned ? S.textMuted : S.text, fontStyle: allIncompleteUnassigned ? "italic" : "normal" }}>{secIdx + 1}. {section.title}</span>
+                {hasMyTasks && <span style={{ fontSize: 10, background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText, padding: "2px 7px", borderRadius: 8, fontWeight: 700, fontFamily: S.mono }}>YOU</span>}
+                {unassignedCount > 0 && <span style={{ fontSize: 11, color: S.textMuted, fontStyle: "italic" }}>{unassignedCount} unassigned</span>}
+              </div>
+              <span style={{ fontSize: 14, fontFamily: S.mono, color: allDone ? S.success : S.textMuted, marginRight: 2 }}>{allDone ? "✓" : `${sectionChecked}/${section.items.length}`}</span>
+              <span style={{ color: S.textMuted, fontSize: 12, minWidth: 28, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{isExpanded ? "▼" : "▶"}</span>
+            </div>
+            {isExpanded && (
+              <div style={{ marginBottom: 4 }}>
+                <ProgressBar completed={sectionChecked} total={section.items.length} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+                  {(searchLower ? searchedItems : filteredItems).map((item, idx) => (
+                    <div key={item.id} style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+                      {editMode && (
+                        <button onClick={() => removeTask(section.id, item.id)} style={{
+                          marginTop: 14, padding: "4px 7px", borderRadius: 6, fontSize: 13, cursor: "pointer",
+                          background: "rgba(232,93,93,0.1)", border: "1px solid rgba(232,93,93,0.25)",
+                          color: "#E88A8A", fontFamily: S.sans, flexShrink: 0
+                        }}>✕</button>
+                      )}
+                      <div style={{ flex: 1 }}>
+                        {editMode && editingTaskId === item.id ? (
+                          <div style={{ display: "flex", gap: 6, padding: "10px 0" }}>
+                            <input
+                              autoFocus
+                              value={editingTaskText}
+                              onChange={e => setEditingTaskText(e.target.value)}
+                              onBlur={() => saveTaskEdit(section.id, item.id)}
+                              onKeyDown={e => { if (e.key === "Enter") saveTaskEdit(section.id, item.id); if (e.key === "Escape") { setEditingTaskId(null); } }}
+                              style={{
+                                flex: 1, padding: "8px 10px", borderRadius: 8, fontSize: 14,
+                                background: "rgba(255,235,210,0.06)", border: `1px solid ${S.accentBorder}`,
+                                color: S.text, fontFamily: S.sans, outline: "none"
+                              }}
+                            />
+                          </div>
+                        ) : (
+                          <div onClick={editMode ? () => { setEditingTaskId(item.id); setEditingTaskText(item.task || item.text || ""); } : undefined}
+                            style={{ cursor: editMode ? "text" : undefined }}>
+                            <CheckItem item={item} checked={!!checks[item.id]}
+                              onToggle={() => !editMode && toggleCheck(item.id)} assignee={assignments[item.id]}
+                              onAssign={u => setAssignments({ ...assignments, [item.id]: u })}
+                              taskNote={taskNotes[item.id]} onUpdateNote={n => setTaskNotes({ ...taskNotes, [item.id]: n })}
+                              photos={photos} setPhotos={setPhotos}
+                              isMine={assignments[item.id] === currentUser || (filterUser !== "all" && assignments[item.id] === filterUser)} currentUser={currentUser}
+                              teamMembers={teamMembers} isLast={idx === filteredItems.length - 1} allChecks={checks} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {editMode && !searchLower && (
+                  addingTaskInSection === section.id ? (
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <input
+                        autoFocus
+                        value={newTaskText}
+                        onChange={e => setNewTaskText(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") addTaskToSection(section.id); if (e.key === "Escape") { setAddingTaskInSection(null); setNewTaskText(""); } }}
+                        placeholder="Task description..."
+                        style={{
+                          flex: 1, padding: "9px 12px", borderRadius: 8, fontSize: 14,
+                          background: "rgba(255,235,210,0.06)", border: `1px solid ${S.accentBorder}`,
+                          color: S.text, fontFamily: S.sans, outline: "none"
+                        }}
+                      />
+                      <button onClick={() => addTaskToSection(section.id)} style={{
+                        padding: "9px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                        background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText, fontFamily: S.sans
+                      }}>Add</button>
+                      <button onClick={() => { setAddingTaskInSection(null); setNewTaskText(""); }} style={{
+                        padding: "9px 10px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                        background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted, fontFamily: S.sans
+                      }}>✕</button>
+                    </div>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setAddingTaskInSection(section.id); setNewTaskText(""); }} style={{
+                      width: "100%", padding: "10px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                      background: "rgba(255,235,210,0.02)", border: `1px dashed ${S.cardBorder}`,
+                      color: S.textMuted, fontFamily: S.sans, marginTop: 6
+                    }}>+ Add Task</button>
+                  )
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers, elapsed, running, setRunning, remaining, targetSeconds, targetUser, checklistData }) {
+  const isUnassigned = targetUser === "__unassigned__";
+  const viewUser = isUnassigned ? null : (targetUser || currentUser);
+  const isOwnView = !targetUser;
+  const data = checklistData || CHECKLIST_DATA;
+  const toggleCheck = (itemId) => {
+    const nc = { ...checks, [itemId]: !checks[itemId] };
+    const ncomp = { ...completions };
+    if (nc[itemId]) { ncomp[itemId] = { name: currentUser }; }
+    else { delete ncomp[itemId]; }
+    setChecks(nc); setCompletions(ncomp);
+    if (!running) setRunning(true);
+  };
+  const hasTasks = data.some(s => s.items.some(i => isUnassigned ? !assignments[i.id] : assignments[i.id] === viewUser));
+  return (
+    <div style={{ padding: "8px 16px 100px" }}>
+      {data.map(section => {
+        const my = section.items.filter(i => isUnassigned ? !assignments[i.id] : assignments[i.id] === viewUser);
+        if (my.length === 0) return null;
+        const done = my.filter(i => checks[i.id]).length;
+        const allDone = done === my.length;
+        return (
+          <div key={section.id} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: S.textMuted, padding: "8px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+              <span>{section.icon} {data.findIndex(s => s.id === section.id) + 1}. {section.title}</span>
+              <span style={{ fontFamily: S.mono, fontSize: 12, color: allDone ? S.success : S.textMuted }}>{allDone ? "✓" : `${done}/${my.length}`}</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {my.map((item, idx) => (
+                <CheckItem key={item.id} item={item} checked={!!checks[item.id]}
+                  onToggle={() => toggleCheck(item.id)} assignee={assignments[item.id]}
+                  onAssign={u => setAssignments({ ...assignments, [item.id]: u })}
+                  taskNote={taskNotes[item.id]} onUpdateNote={n => setTaskNotes({ ...taskNotes, [item.id]: n })}
+                  photos={photos} setPhotos={setPhotos}
+                  isMine={isOwnView || assignments[item.id] === currentUser} currentUser={currentUser}
+                  teamMembers={teamMembers} isLast={idx === my.length - 1} allChecks={checks} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+      {!hasTasks && (
+        <div style={{ textAlign: "center", padding: "48px 20px", color: S.textMuted }}>
+          <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>👤</div>
+          <div style={{ fontSize: 16, fontWeight: 600, color: S.textDim }}>{isUnassigned ? "All tasks are assigned" : isOwnView ? "No tasks assigned to you yet" : `No tasks assigned to ${viewUser}`}</div>
+          <div style={{ fontSize: 14, marginTop: 6 }}>{isUnassigned ? "Every task has an owner." : isOwnView ? "Head to the Checklist and assign yourself some tasks." : "Assign tasks from the full Checklist view."}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PowerSeqView() {
+  return (
+    <div style={{ padding: "12px 16px 80px" }}>
+      <p style={{ color: S.textMuted, fontSize: 14, marginBottom: 16 }}>Equipment must be powered on in this exact order. Reverse for teardown.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {POWER_SEQUENCE.map(item => (
+          <div key={item.order} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(232,93,93,0.1)", color: "#E88A8A", fontWeight: 700, fontSize: 15, fontFamily: S.mono }}>{item.order}</div>
+            <span style={{ fontSize: 16, fontWeight: 500 }}>{item.equipment}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 16, padding: "12px 14px", background: "rgba(232,93,93,0.06)", borderRadius: 10, border: "1px solid rgba(232,93,93,0.15)" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#E88A8A", marginBottom: 4 }}>⚠️ Teardown: Reverse This Order</div>
+        <div style={{ fontSize: 14, color: S.textDim }}>Power down Speakers FIRST (#10), then work backwards to Stage Box (#1).</div>
+      </div>
+    </div>
+  );
+}
+
+function IOListView() {
+  const [tab, setTab] = useState("stageBox");
+  const [ioConfig, setIoConfig, loaded] = useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST);
+  const [editing, setEditing] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  
+  const tabs = [{ id: "stageBox", label: "Inputs" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
+  
+  if (!loaded) return <div style={{ padding: "16px", textAlign: "center", color: S.textMuted }}>Loading I/O configuration...</div>;
+  
+  const updateChannel = (tabKey, index, field, value) => {
+    const updated = JSON.parse(JSON.stringify(ioConfig));
+    if (tabKey === "danteRouting") {
+      updated[tabKey].routes[index][field] = value;
+    } else {
+      updated[tabKey].channels[index][field] = value;
+    }
+    setIoConfig(updated);
+  };
+  
+  const sortInputsByChannel = () => {
+    const updated = JSON.parse(JSON.stringify(ioConfig));
+    updated.stageBox.channels.sort((a, b) => {
+      const aNum = parseInt(a.ch, 10);
+      const bNum = parseInt(b.ch, 10);
+      const aIsNum = !isNaN(aNum);
+      const bIsNum = !isNaN(bNum);
+      if (aIsNum && bIsNum) return aNum - bNum;
+      if (aIsNum) return -1;
+      if (bIsNum) return 1;
+      return String(a.ch).localeCompare(String(b.ch));
+    });
+    setIoConfig(updated);
+  };
+
+  const isDuplicateChannel = (tabKey, index) => {
+    const channels = tabKey === "danteRouting" ? [] : ioConfig[tabKey].channels;
+    const current = channels[index];
+    if (!current) return false;
+    const chVal = tabKey === "stageBox" ? current.ch : current.ch;
+    return channels.some((c, i) => i !== index && String(c.ch) === String(chVal));
+  };
+
+  const handleChannelBlur = (tabKey) => {
+    if (tabKey === "stageBox") sortInputsByChannel();
+  };
+  
+  const addChannel = (tabKey) => {
+    const updated = JSON.parse(JSON.stringify(ioConfig));
+    if (tabKey === "stageBox") {
+      const lastCh = updated.stageBox.channels.length > 0 
+        ? updated.stageBox.channels[updated.stageBox.channels.length - 1].ch 
+        : 0;
+      updated.stageBox.channels.push({ ch: lastCh, label: "New Channel", type: "XLR", notes: "" });
+    } else if (tabKey === "outputs") {
+      updated.outputs.channels.push({ ch: "Aux " + (updated.outputs.channels.length + 1), label: "New Output", destination: "" });
+    } else if (tabKey === "danteRouting") {
+      updated.danteRouting.routes.push({ from: "Source", to: "Destination", channels: "", protocol: "Dante" });
+    }
+    setIoConfig(updated);
+  };
+  
+  const removeChannel = (tabKey, index) => {
+    const updated = JSON.parse(JSON.stringify(ioConfig)); // deep clone
+    if (tabKey === "danteRouting") {
+      updated[tabKey].routes.splice(index, 1);
+    } else {
+      updated[tabKey].channels.splice(index, 1);
+    }
+    setIoConfig(updated);
+  };
+  
+  const resetToDefaults = () => {
+    setIoConfig(JSON.parse(JSON.stringify(DEFAULT_IO_LINE_LIST))); // deep clone
+    setConfirmingReset(false);
+    setEditing(false);
+  };
+  
+  return (
+    <div style={{ padding: "12px 16px 80px" }}>
+      {/* Tab bar + Edit/Reset controls */}
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              flex: 1, padding: "8px 10px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: "pointer", border: "1px solid", fontFamily: S.sans,
+              background: tab === t.id ? S.accentGlow : "transparent",
+              borderColor: tab === t.id ? S.accentBorder : S.cardBorder,
+              color: tab === t.id ? S.accentText : S.textMuted,
+            }}>{t.label}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button onClick={() => setEditing(!editing)} style={{
+            flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            cursor: "pointer", fontFamily: S.sans,
+            background: editing ? S.accentGlow : "rgba(255,235,210,0.04)",
+            border: `1px solid ${editing ? S.accentBorder : S.cardBorder}`,
+            color: editing ? S.accentText : S.textMuted
+          }}>{editing ? "✓ Done Editing" : "✏️ Edit I/O"}</button>
+          {confirmingReset ? (
+            <>
+              <button onClick={resetToDefaults} style={{
+                padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                cursor: "pointer", fontFamily: S.sans,
+                background: "rgba(232,93,93,0.15)", border: "1px solid rgba(232,93,93,0.3)",
+                color: "#E88A8A"
+              }}>Confirm Reset</button>
+              <button onClick={() => setConfirmingReset(false)} style={{
+                padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
+                border: `1px solid ${S.cardBorder}`, color: S.textMuted
+              }}>✕</button>
+            </>
+          ) : (
+            <button onClick={() => setConfirmingReset(true)} style={{
+              padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+              fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
+              border: `1px solid ${S.cardBorder}`, color: S.textMuted
+            }}>Reset</button>
+          )}
+        </div>
+      </div>
+      
+      {/* Stage Box Inputs */}
+      {tab === "stageBox" && ioConfig.stageBox.channels.map((ch, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+          <div style={{ minWidth: 32, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: isDuplicateChannel("stageBox", i) ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.1)", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono }}>
+            {editing ? (
+              <input type="text" value={ch.ch} onChange={e => updateChannel("stageBox", i, "ch", e.target.value)}
+                onBlur={() => handleChannelBlur("stageBox")}
+                style={{ width: 32, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono, outline: "none" }} />
+            ) : ch.ch}
+          </div>
+          <div style={{ flex: 1 }}>
+            {editing ? (
+              <>
+                <input value={ch.label} onChange={e => updateChannel("stageBox", i, "label", e.target.value)}
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                <input value={ch.notes} onChange={e => updateChannel("stageBox", i, "notes", e.target.value)} placeholder="Notes..."
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+              </>
+            ) : (
+              <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>{ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}</>
+            )}
+          </div>
+          {editing ? (
+            <select value={ch.type} onChange={e => updateChannel("stageBox", i, "type", e.target.value)}
+              style={{ background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 4, color: S.textDim, fontSize: 11, padding: "2px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
+              <option value="XLR">XLR</option>
+              <option value="DI/XLR">DI/XLR</option>
+              <option value="Line">Line</option>
+              <option value="1/4">1/4"</option>
+            </select>
+          ) : (
+            <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
+          )}
+          {editing && (
+            <button onClick={() => removeChannel("stageBox", i)} style={{
+              background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+              borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+            }}>✕</button>
+          )}
+        </div>
+      ))}
+      
+      {/* Outputs */}
+      {tab === "outputs" && ioConfig.outputs.channels.map((ch, i) => (
+        <div key={i} style={{ padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ minWidth: 60, fontSize: 12, color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, background: isDuplicateChannel("outputs", i) ? "rgba(239,68,68,0.15)" : S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
+              {editing ? (
+                <input value={ch.ch} onChange={e => updateChannel("outputs", i, "ch", e.target.value)}
+                  style={{ width: 60, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, fontSize: 12, fontWeight: 600, fontFamily: S.mono, outline: "none" }} />
+              ) : ch.ch}
+            </div>
+            <div style={{ flex: 1 }}>
+              {editing ? (
+                <>
+                  <input value={ch.label} onChange={e => updateChannel("outputs", i, "label", e.target.value)}
+                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                  <input value={ch.destination} onChange={e => updateChannel("outputs", i, "destination", e.target.value)} placeholder="Destination..."
+                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                </>
+              ) : (
+                <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div><div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div></>
+              )}
+            </div>
+            {editing && (
+              <button onClick={() => removeChannel("outputs", i)} style={{
+                background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+                borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+              }}>✕</button>
+            )}
+          </div>
+        </div>
+      ))}
+      
+      {/* Dante Routing */}
+      {tab === "danteRouting" && ioConfig.danteRouting.routes.map((r, i) => (
+        <div key={i} style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 6 }}>
+          {editing ? (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <input value={r.from} onChange={e => updateChannel("danteRouting", i, "from", e.target.value)} placeholder="Source"
+                  style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", outline: "none", fontFamily: S.sans }} />
+                <div style={{ color: S.accent }}>→</div>
+                <input value={r.to} onChange={e => updateChannel("danteRouting", i, "to", e.target.value)} placeholder="Destination"
+                  style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", outline: "none", fontFamily: S.sans }} />
+                <button onClick={() => removeChannel("danteRouting", i)} style={{
+                  background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+                  borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+                }}>✕</button>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={r.channels} onChange={e => updateChannel("danteRouting", i, "channels", e.target.value)} placeholder="Channels description"
+                  style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                <select value={r.protocol} onChange={e => updateChannel("danteRouting", i, "protocol", e.target.value)}
+                  style={{ background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 4, color: S.accent, fontSize: 11, padding: "1px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
+                  <option value="Dante">Dante</option>
+                  <option value="Analog">Analog</option>
+                  <option value="AES50">AES50</option>
+                  <option value="USB">USB</option>
+                </select>
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{r.from}</div>
+                <div style={{ color: S.accent }}>→</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{r.to}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, fontSize: 12 }}>
+                <span style={{ color: S.textMuted }}>{r.channels}</span>
+                <span style={{ color: S.accent, background: S.accentGlow, padding: "1px 6px", borderRadius: 4, fontFamily: S.mono, fontSize: 11 }}>{r.protocol}</span>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+      
+      {/* Add channel button (only in edit mode) */}
+      {editing && (
+        <button onClick={() => addChannel(tab)} style={{
+          width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+          cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+          background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+          color: S.textMuted
+        }}>+ Add {tab === "stageBox" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
+      )}
+    </div>
+  );
+}
+
+function SignalFlowView() {
+  const Box = ({x, y, w, h, label, sub, stroke}) => (
+    <>
+      <rect x={x} y={y} width={w} height={h || 50} rx="8" fill="rgba(255,235,210,0.05)" stroke={stroke || "rgba(255,200,140,0.12)"} strokeWidth="1.5"/>
+      <text x={x + w/2} y={y + (sub ? 20 : (h||50)/2 + 5)} fill="#F0E6D8" fontSize="14" fontWeight="600" textAnchor="middle" fontFamily="'DM Sans', system-ui">{label}</text>
+      {sub && <text x={x + w/2} y={y + 36} fill="#B8A894" fontSize="11" textAnchor="middle" fontFamily="'DM Sans', system-ui">{sub}</text>}
+    </>
+  );
+  const Arrow = ({x1,y1,x2,y2}) => (
+    <>
+      <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#7A6E60" strokeWidth="1.5"/>
+      <polygon points={`${x2},${y2} ${x2-4},${y2-7} ${x2+4},${y2-7}`} fill="#7A6E60"/>
+    </>
+  );
+  const Label = ({x, y, text}) => (
+    <text x={x} y={y} fill="#7A6E60" fontSize="10" fontFamily="'JetBrains Mono', monospace">{text}</text>
+  );
+  const HLine = ({x1,x2,y}) => <line x1={x1} y1={y} x2={x2} y2={y} stroke="#7A6E60" strokeWidth="1.5"/>;
+  const VLine = ({x,y1,y2}) => <line x1={x} y1={y1} x2={x} y2={y2} stroke="#7A6E60" strokeWidth="1.5"/>;
+
+  return (
+    <div style={{ padding: "12px 16px 80px" }}>
+      {/* Audio Signal Chain */}
+      <div style={{ marginBottom: 16, background: "rgba(232,137,58,0.04)", borderRadius: 16, padding: "20px 8px" }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: S.accent, marginBottom: 12, textAlign: "center" }}>Audio Signal Chain</h3>
+        <svg width="100%" viewBox="0 0 570 660" style={{ display: "block" }}>
+          <Box x={170} y={10} w={200} h={50} label="Stage Inputs" sub="(Mics, DIs, Keys, Drums)"/>
+          <Arrow x1={270} y1={60} x2={270} y2={90}/>
+          <Label x={280} y={80} text="XLR / DI"/>
+
+          <Box x={170} y={90} w={200} h={50} label="Midas DL251" sub="(Stage Box)"/>
+          <Arrow x1={270} y1={140} x2={270} y2={170}/>
+          <Label x={280} y={160} text="AES50 (CAT6)"/>
+
+          <Box x={170} y={170} w={200} h={50} label="Behringer Wing" sub="(Soundboard)"/>
+
+          {/* WiFi Router — right sidebar off Wing */}
+          <line x1={370} y1={195} x2={400} y2={195} stroke="#7A6E60" strokeWidth="1"/>
+          <rect x={400} y={180} width={85} height={30} rx="6" fill="rgba(255,235,210,0.04)" stroke="rgba(255,200,140,0.08)" strokeWidth="1"/>
+          <text x={442} y={200} fill="#B8A894" fontSize="11" fontWeight="500" textAnchor="middle">WiFi Router</text>
+          <text x={442} y={222} fill="#7A6E60" fontSize="9" textAnchor="middle">iPad (WiFi)</text>
+
+          {/* Tyler's Mac — left sidebar off Wing (USB-C direct) */}
+          <line x1={170} y1={195} x2={140} y2={195} stroke="#7A6E60" strokeWidth="1"/>
+          <rect x={10} y={178} width={130} height={34} rx="6" fill="rgba(255,235,210,0.04)" stroke="rgba(255,200,140,0.08)" strokeWidth="1"/>
+          <text x={75} y={196} fill="#B8A894" fontSize="11" fontWeight="500" textAnchor="middle">Tyler's Mac</text>
+          <text x={75} y={224} fill="#7A6E60" fontSize="9" textAnchor="middle">USB-C direct (Recording)</text>
+
+          {/* Main fork: left = analog, right = Dante */}
+          <VLine x={270} y1={220} y2={248}/>
+          <HLine x1={130} x2={420} y={248}/>
+
+          {/* Left branch: FOH → Subs → IEMs → Bianca */}
+          <Arrow x1={130} y1={248} x2={130} y2={280}/>
+          <Label x={140} y={270} text="L/R Main"/>
+          <Box x={30} y={280} w={200} h={50} label="FOH Speakers" sub="(Both Sides)"/>
+
+          <Arrow x1={130} y1={330} x2={130} y2={390}/>
+          <Label x={140} y={366} text="Sub Out"/>
+          <Box x={40} y={390} w={180} h={44} label="Powered Subs"/>
+
+          <Arrow x1={130} y1={434} x2={130} y2={494}/>
+          <Label x={140} y={470} text="Aux 1 & 2"/>
+          <Box x={20} y={494} w={220} h={50} label="IEM Transmitters" sub="(Worship + Band)"/>
+
+          <Arrow x1={130} y1={544} x2={130} y2={596}/>
+          <Label x={140} y={575} text="XLR Out 8"/>
+          <Box x={50} y={596} w={160} h={44} label="Bianca IEM"/>
+
+          {/* Right branch: Dante → Switch → Omar/Mitch + AVIO → ATEM */}
+          <Arrow x1={420} y1={248} x2={420} y2={280}/>
+          <Label x={430} y={270} text="Dante"/>
+          <Box x={330} y={280} w={180} h={44} label="5-Port Switch"/>
+
+          <VLine x={420} y1={324} y2={348}/>
+          <HLine x1={350} x2={490} y={348}/>
+
+          <Arrow x1={350} y1={348} x2={350} y2={380}/>
+          <Label x={285} y={370} text="CAT6/USB-C"/>
+          <Box x={265} y={380} w={170} h={50} label="Omar/Mitch Mac" sub="(Stream Mix)"/>
+
+          <Arrow x1={490} y1={348} x2={490} y2={494}/>
+          <Label x={500} y={428} text="CAT6"/>
+          <Box x={405} y={494} w={120} h={50} label="Dante AVIO" sub="(Audinate)"/>
+
+          <Arrow x1={465} y1={544} x2={465} y2={596}/>
+          <Label x={475} y={576} text="Analog In"/>
+          <Box x={375} y={596} w={180} h={50} label="ATEM Mini Pro" sub="(Audio In Ch 1-2)"/>
+        </svg>
+      </div>
+
+      {/* Video Signal Chain */}
+      <div style={{ marginBottom: 16, background: "rgba(139,92,246,0.04)", borderRadius: 16, padding: "20px 8px" }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#A78BFA", marginBottom: 12, textAlign: "center" }}>Video Signal Chain</h3>
+        <svg width="100%" viewBox="0 0 480 510" style={{ display: "block" }}>
+          <Box x={150} y={10} w={180} h={40} label="Streaming Camera"/>
+          <Arrow x1={240} y1={50} x2={240} y2={80}/>
+          <Label x={250} y={70} text="SDI / HDMI"/>
+
+          <Box x={150} y={80} w={180} h={40} label="ATEM Mini Pro"/>
+          <Arrow x1={240} y1={120} x2={240} y2={150}/>
+          <Label x={250} y={140} text="USB"/>
+
+          <Box x={130} y={150} w={220} h={50} label="ProPresenter Mac" sub="(Video Control)"/>
+
+          <VLine x={240} y1={200} y2={226}/>
+          <HLine x1={140} x2={360} y={226}/>
+
+          <Arrow x1={140} y1={226} x2={140} y2={280}/>
+          <Label x={150} y={260} text="HDMI"/>
+          <Box x={40} y={280} w={200} h={40} label="LED Transmitter"/>
+
+          <Arrow x1={140} y1={320} x2={140} y2={360}/>
+          <Label x={150} y={346} text="AES50 (CAT6 ×2)"/>
+          <Box x={40} y={360} w={200} h={50} label="LED Wall" sub="(9×5, 45 panels)"/>
+
+          <Arrow x1={360} y1={226} x2={360} y2={258}/>
+          <Label x={370} y={248} text="USB-C"/>
+          <Box x={265} y={258} w={190} h={50} label="Confidence Monitor" sub="(Stage Display)"/>
+
+          <rect x={110} y={440} width={260} height={70} rx="8" fill="rgba(16,185,129,0.06)" stroke="rgba(16,185,129,0.2)" strokeWidth="1.5"/>
+          <text x={240} y={466} fill="#5CB87A" fontSize="14" fontWeight="600" textAnchor="middle">Live Streaming</text>
+          <text x={240} y={484} fill="#B8A894" fontSize="11" textAnchor="middle">ProPresenter → Internet → Resi</text>
+        </svg>
+      </div>
+
+      {/* Network / Dante Chain */}
+      <div style={{ background: "rgba(16,185,129,0.04)", borderRadius: 16, padding: "20px 8px" }}>
+        <h3 style={{ fontSize: 16, fontWeight: 700, color: "#5CB87A", marginBottom: 12, textAlign: "center" }}>Network / Dante Chain</h3>
+        <svg width="100%" viewBox="0 0 480 360" style={{ display: "block" }}>
+          <Box x={140} y={10} w={200} h={50} label="Behringer Wing" sub="(Dante Expansion)"/>
+          <Arrow x1={240} y1={60} x2={240} y2={90}/>
+          <Label x={250} y={80} text="CAT6 (Primary)"/>
+
+          <Box x={150} y={90} w={180} h={40} label="5-Port Switch"/>
+
+          <VLine x={240} y1={130} y2={156}/>
+          <HLine x1={80} x2={400} y={156}/>
+
+          <Arrow x1={80} y1={156} x2={80} y2={190}/>
+          <Label x={90} y={180} text="CAT6/USB-C"/>
+          <Box x={5} y={190} w={150} h={50} label="Omar/Mitch Mac" sub="(Stream Mix)"/>
+
+          <Arrow x1={240} y1={156} x2={240} y2={190}/>
+          <Label x={250} y={180} text="CAT6"/>
+          <Box x={165} y={190} w={150} h={50} label="Dante AVIO" sub="(Audinate)"/>
+
+          <Arrow x1={240} y1={240} x2={240} y2={290}/>
+          <Label x={250} y={272} text="Analog In"/>
+          <Box x={150} y={290} w={180} h={50} label="ATEM Mini Pro" sub="(Audio In Ch 1-2)"/>
+
+          <Arrow x1={400} y1={156} x2={400} y2={190}/>
+          <Label x={410} y={180} text="CAT6"/>
+          <Box x={320} y={190} w={155} h={50} label="Glenn's Mac" sub="(ProPresenter)"/>
+
+          <text x={240} y={358} fill="#7A6E60" fontSize="9" textAnchor="middle" fontFamily="'JetBrains Mono', monospace">Tyler's Mac: USB-C direct to Wing (not on Dante)</text>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+const DEFAULT_REPAIRS = [
+  { id: "r1", item: "LED Wall Panel", issue: "Dead cells / pixels on 2 panels", priority: "high" },
+  { id: "r2", item: "CAT6 Cables", issue: "Check and label all cable runs", priority: "medium" },
+  { id: "r3", item: "Stage Box (DL251)", issue: "Intermittent signal on input 8", priority: "high" },
+  { id: "r4", item: "In-ear transmitters", issue: "Battery contacts need cleaning", priority: "low" },
+  { id: "r5", item: "USB-C Adapters", issue: "Need backup adapters (2×)", priority: "medium" },
+  { id: "r6", item: "Speaker Cables", issue: "Inspect for damage, replace if frayed", priority: "medium" },
+];
+
+function RepairsView() {
+  const [repairs, setRepairs, loaded] = useStorage("elim3-repairs", DEFAULT_REPAIRS);
+  const [editing, setEditing] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const priorityColors = { high: "#EF4444", medium: "#F59E0B", low: "#5CB87A" };
+  const priorityLabels = { high: "Urgent", medium: "Soon", low: "Low" };
+
+  if (!loaded) return <div style={{ padding: "16px", textAlign: "center", color: S.textMuted }}>Loading repairs...</div>;
+
+  const filtered = search.trim()
+    ? repairs.filter(r => r.item.toLowerCase().includes(search.toLowerCase()) || r.issue.toLowerCase().includes(search.toLowerCase()))
+    : repairs;
+
+  const updateRepair = (id, field, value) => {
+    setRepairs(repairs.map(r => r.id === id ? { ...r, [field]: value } : r));
+  };
+
+  const addRepair = () => {
+    const newId = "r" + Date.now();
+    setRepairs([...repairs, { id: newId, item: "New Item", issue: "Describe the issue", priority: "medium" }]);
+  };
+
+  const removeRepair = (id) => {
+    setRepairs(repairs.filter(r => r.id !== id));
+  };
+
+  const resetToDefaults = () => {
+    setRepairs(JSON.parse(JSON.stringify(DEFAULT_REPAIRS)));
+    setConfirmingReset(false);
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ padding: "12px 16px 80px" }}>
+      {/* Search + Edit/Reset controls */}
+      <div style={{ marginBottom: 12 }}>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search repairs..."
+          style={{
+            width: "100%", padding: "9px 14px", borderRadius: 8, fontSize: 14,
+            background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+            color: S.text, fontFamily: S.sans, outline: "none", marginBottom: 8,
+            boxSizing: "border-box"
+          }}
+        />
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <button onClick={() => setEditing(!editing)} style={{
+            flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+            cursor: "pointer", fontFamily: S.sans,
+            background: editing ? S.accentGlow : "rgba(255,235,210,0.04)",
+            border: `1px solid ${editing ? S.accentBorder : S.cardBorder}`,
+            color: editing ? S.accentText : S.textMuted
+          }}>{editing ? "✓ Done Editing" : "✏️ Edit Repairs"}</button>
+          {confirmingReset ? (
+            <>
+              <button onClick={resetToDefaults} style={{
+                padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                cursor: "pointer", fontFamily: S.sans,
+                background: "rgba(232,93,93,0.15)", border: "1px solid rgba(232,93,93,0.3)",
+                color: "#E88A8A"
+              }}>Confirm Reset</button>
+              <button onClick={() => setConfirmingReset(false)} style={{
+                padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+                fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
+                border: `1px solid ${S.cardBorder}`, color: S.textMuted
+              }}>✕</button>
+            </>
+          ) : (
+            <button onClick={() => setConfirmingReset(true)} style={{
+              padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+              fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
+              border: `1px solid ${S.cardBorder}`, color: S.textMuted
+            }}>Reset</button>
+          )}
+        </div>
+        <div style={{ fontSize: 13, color: S.textMuted, marginTop: 8 }}>
+          {filtered.length} {filtered.length === 1 ? "item" : "items"}{search && repairs.length !== filtered.length ? ` of ${repairs.length}` : ""}
+        </div>
+      </div>
+
+      {filtered.map(r => (
+        <div key={r.id} style={{
+          background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 12,
+          padding: "14px 16px", marginBottom: 8, borderLeft: `3px solid ${priorityColors[r.priority]}`
+        }}>
+          {editing ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  value={r.item}
+                  onChange={e => updateRepair(r.id, "item", e.target.value)}
+                  style={{
+                    flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 14, fontWeight: 600,
+                    background: "rgba(255,235,210,0.06)", border: `1px solid ${S.cardBorder}`,
+                    color: S.text, fontFamily: S.sans, outline: "none"
+                  }}
+                />
+                <select
+                  value={r.priority}
+                  onChange={e => updateRepair(r.id, "priority", e.target.value)}
+                  style={{
+                    padding: "6px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                    background: `${priorityColors[r.priority]}15`, border: `1px solid ${priorityColors[r.priority]}40`,
+                    color: priorityColors[r.priority], fontFamily: S.sans, cursor: "pointer", outline: "none"
+                  }}
+                >
+                  <option value="high">Urgent</option>
+                  <option value="medium">Soon</option>
+                  <option value="low">Low</option>
+                </select>
+                <button onClick={() => removeRepair(r.id)} style={{
+                  padding: "6px 10px", borderRadius: 6, fontSize: 14, cursor: "pointer",
+                  background: "rgba(232,93,93,0.1)", border: "1px solid rgba(232,93,93,0.25)",
+                  color: "#E88A8A", fontFamily: S.sans
+                }}>✕</button>
+              </div>
+              <input
+                value={r.issue}
+                onChange={e => updateRepair(r.id, "issue", e.target.value)}
+                style={{
+                  width: "100%", padding: "6px 10px", borderRadius: 6, fontSize: 13,
+                  background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+                  color: S.textMuted, fontFamily: S.sans, outline: "none", boxSizing: "border-box"
+                }}
+              />
+            </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, color: S.text }}>{r.item}</div>
+                <span style={{ fontSize: 11, fontWeight: 600, color: priorityColors[r.priority], background: `${priorityColors[r.priority]}15`, padding: "2px 8px", borderRadius: 4 }}>{priorityLabels[r.priority]}</span>
+              </div>
+              <div style={{ fontSize: 13, color: S.textMuted, lineHeight: 1.5 }}>{r.issue}</div>
+            </>
+          )}
+        </div>
+      ))}
+
+      {editing && !search && (
+        <button onClick={addRepair} style={{
+          width: "100%", padding: "12px", borderRadius: 10, fontSize: 14, fontWeight: 600,
+          cursor: "pointer", fontFamily: S.sans, background: "rgba(255,235,210,0.03)",
+          border: `1px dashed ${S.cardBorder}`, color: S.textMuted, marginTop: 4
+        }}>+ Add Repair</button>
+      )}
+    </div>
+  );
+}
+
+function PlaceholderView({ icon, title, description }) {
+  return (
+    <div style={{ padding: "16px", textAlign: "center" }}>
+      <div style={{ padding: "48px 20px" }}>
+        <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.4 }}>{icon}</div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: S.text, marginBottom: 8 }}>{title}</h3>
+        <p style={{ color: S.textMuted, fontSize: 14, lineHeight: 1.6, maxWidth: 320, margin: "0 auto" }}>{description}</p>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════
+function ElimProductionApp() {
+  const contentRef = useRef(null);
+  const [currentUser, setCurrentUser] = useState(() => _ls.get("elim_remember_user") || "");
+  const [view, setView] = useState("dashboard");
+  const [checklistFilter, setChecklistFilter] = useState(null);
+  const [checks, setChecks, c1] = useStorage("elim3-checks", {});
+  const [assignments, setAssignments, c2] = useStorage("elim3-assign", {});
+  const [completions, setCompletions, c3] = useStorage("elim3-comp", {});
+  const [taskNotes, setTaskNotes, c4] = useStorage("elim3-notes", {});
+  const [photos, setPhotos, c5] = useStorage("elim3-photos", {});
+  const [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
+  const [timerState, setTimerState, c7] = useStorage("elim3-timer", { startedAt: null, accumulated: 0, targetMinutes: null });
+  const [history, setHistory, c8] = useStorage("elim3-history", []);
+  const [checklistData, setChecklistData, c9] = useStorage("elim3-checklist-data", CHECKLIST_DATA);
+  const [elapsed, setElapsed] = useState(0);
+
+  // Derive running from timer state
+  const running = !!timerState.startedAt;
+  const targetSeconds = timerState.targetMinutes ? timerState.targetMinutes * 60 : null;
+  const remaining = targetSeconds !== null ? Math.max(0, targetSeconds - elapsed) : null;
+
+  // Compute elapsed from persisted timer
+  useEffect(() => {
+    const compute = () => {
+      if (timerState.startedAt) {
+        const e = timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000);
+        setElapsed(e);
+        // Auto-pause when countdown reaches zero
+        if (timerState.targetMinutes && e >= timerState.targetMinutes * 60) {
+          setTimerState({ ...timerState, startedAt: null, accumulated: e });
+        }
+      } else {
+        setElapsed(timerState.accumulated || 0);
+      }
+    };
+    compute();
+    if (!timerState.startedAt) return;
+    const iv = setInterval(compute, 1000);
+    return () => clearInterval(iv);
+  }, [timerState]);
+
+  const setRunning = useCallback((shouldRun) => {
+    if (shouldRun && !timerState.startedAt) {
+      // Start or resume
+      setTimerState({ ...timerState, startedAt: Date.now() });
+    } else if (!shouldRun && timerState.startedAt) {
+      // Pause — freeze accumulated
+      const now = Date.now();
+      const total = timerState.accumulated + Math.floor((now - timerState.startedAt) / 1000);
+      setTimerState({ ...timerState, startedAt: null, accumulated: total });
+    }
+  }, [timerState, setTimerState]);
+
+  const resetTimer = useCallback(() => {
+    setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+  }, [setTimerState]);
+
+  const setTarget = useCallback((minutes) => {
+    setTimerState({ startedAt: null, accumulated: 0, targetMinutes: minutes });
+  }, [setTimerState]);
+
+  const newWeek = useCallback(() => {
+    // Save lightweight history
+    const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
+    const totalChecked = Object.values(checks).filter(Boolean).length;
+    const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
+    const finalElapsed = timerState.startedAt
+      ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
+      : timerState.accumulated || 0;
+    const record = { date: new Date().toISOString().slice(0, 10), pct, elapsed: finalElapsed, tasks: totalChecked, total: totalItems };
+    setHistory([record, ...history].slice(0, 52)); // keep last year of setups
+    // Clear progress
+    setChecks({});
+    setCompletions({});
+    setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+  }, [checklistData, checks, timerState, history, setChecks, setCompletions, setTimerState, setHistory]);
+
+  // Derive team lists from roster
+  const teamMembers = roster.map(r => r.name);
+  const teamColors = Object.fromEntries(roster.map(r => [r.name, r.color]));
+
+  // Remember-me: save choice to this device
+  const selectUser = useCallback((name) => {
+    setCurrentUser(name);
+    if (name) _ls.set("elim_remember_user", name);
+    else _ls.del("elim_remember_user");
+  }, []);
+
+  // If remembered user was removed from roster, clear
+  useEffect(() => {
+    if (currentUser && teamMembers.length > 0 && !teamMembers.includes(currentUser)) {
+      selectUser("");
+    }
+  }, [teamMembers, currentUser]);
+
+  const navigate = useCallback((target) => {
+    if (target.startsWith("checklist:")) {
+      setChecklistFilter(target.split(":")[1]);
+      setView("crew-tasks");
+    } else {
+      setChecklistFilter(null);
+      setView(target);
+    }
+  }, []);
+
+  const goBack = useCallback(() => {
+    if (view !== "dashboard") { setChecklistFilter(null); setView("dashboard"); }
+  }, [view]);
+
+  useBackSwipe(view !== "dashboard" ? goBack : null, contentRef);
+
+  const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
+  const allItems = checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s })));
+  const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9;
+
+  const titles = {
+    dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
+    "crew-tasks": checklistFilter === "__unassigned__" ? "Unassigned Tasks" : checklistFilter ? `${checklistFilter}'s Tasks` : "Crew Tasks",
+    "power-seq": "Power Sequence", "io-list": "I/O Line List", network: "Signal Flow",
+    inventory: "Equipment", repairs: "Repairs", purchases: "Purchases", settings: "Settings",
+  };
+
+  if (!loaded) return (
+    <div style={{ minHeight: "100vh", background: S.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: S.sans }}>
+      <div style={{ textAlign: "center", color: S.text }}><div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}><ElimLogo size={56} /></div><div style={{ fontSize: 15, opacity: 0.6 }}>Loading...</div></div>
+    </div>
+  );
+
+  if (!currentUser) return (
+    <div style={{ height: "100dvh", maxHeight: "100dvh", overflow: "hidden", background: S.bg, fontFamily: S.sans, color: S.text, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <div style={{ textAlign: "center", maxWidth: 380, width: "100%" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><ElimLogo size={76} /></div>
+        <h1 style={{ fontSize: 28, fontWeight: 800, margin: "0 0 4px", background: S.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>ELIM Production</h1>
+        <p style={{ color: S.textMuted, fontSize: 14, marginBottom: 28 }}>Select your name to get started</p>
+        <div style={{ display: "grid", gridTemplateColumns: teamMembers.length > 6 ? "1fr 1fr" : "1fr", gap: 6 }}>
+          {teamMembers.map(name => (
+            <button key={name} onClick={() => selectUser(name)} style={{
+              padding: "13px 14px", background: S.card, border: `1px solid ${S.cardBorder}`,
+              borderRadius: 10, color: S.text, fontSize: 15, fontWeight: 600, cursor: "pointer",
+              textAlign: "center", transition: "all 0.15s ease", fontFamily: S.sans
+            }}
+            onMouseEnter={e => { e.target.style.background = S.accentGlow; e.target.style.borderColor = S.accentBorder; }}
+            onMouseLeave={e => { e.target.style.background = S.card; e.target.style.borderColor = S.cardBorder; }}>{name}</button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  const sharedProps = { currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers };
+  const checklistProps = { checklistData, setChecklistData };
+
+  return (
+    <div style={{ minHeight: "100vh", background: S.bg, fontFamily: S.sans, color: S.text }}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+      <Header currentUser={currentUser} title={titles[view] || "ELIM Production"}
+        subtitle={null}
+        onBack={view !== "dashboard" ? goBack : null}
+        onSwitchUser={view === "dashboard" ? () => selectUser("") : null}
+        onSettings={view === "dashboard" ? () => navigate("settings") : null}
+        rightContent={(view === "checklist" || view === "my-tasks" || view === "crew-tasks") ? (
+          <div onClick={() => setRunning(!running)} style={{
+            fontFamily: S.mono, fontSize: 14, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer",
+            color: targetSeconds ? timerColor(remaining, targetSeconds) : running ? "#E88A8A" : S.textMuted,
+            background: running ? "rgba(255,255,255,0.04)" : S.card,
+            border: `1px solid ${targetSeconds && remaining !== null && remaining < targetSeconds * 0.25 ? "rgba(232,93,93,0.3)" : running ? "rgba(255,255,255,0.08)" : S.cardBorder}`
+          }}>{targetSeconds ? formatTime(remaining) : `${running ? "⏱" : "▶"} ${formatTime(elapsed)}`}</div>
+        ) : null}
+      />
+      <div style={{ height: "calc(48px + env(safe-area-inset-top, 0px))" }} />
+      <div ref={contentRef} style={{ maxWidth: 600, margin: "0 auto" }}>
+        {view === "dashboard" && <DashboardView onNavigate={navigate} checks={checks} totalItems={totalItems} assignments={assignments} currentUser={currentUser} elapsed={elapsed} running={running} setRunning={setRunning} teamMembers={teamMembers} history={history} remaining={remaining} targetSeconds={targetSeconds} onSetTarget={setTarget} allItems={allItems} />}
+        {view === "checklist" && <ChecklistView {...sharedProps} {...checklistProps} elapsed={elapsed} running={running} setRunning={setRunning} initialFilter={checklistFilter} noAutoExpand={true} />}
+        {view === "my-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} checklistData={checklistData} />}
+        {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} />}
+        {view === "power-seq" && <PowerSeqView />}
+        {view === "io-list" && <IOListView />}
+        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} />}
+        {view === "network" && <SignalFlowView />}
+        {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
+        {view === "repairs" && <RepairsView />}
+        {view === "purchases" && <PlaceholderView icon="🛒" title="Purchase List" description="Want/need purchase tracking coming in a future update." />}
+      </div>
+    </div>
+  );
+}
+
+    /* INLINE_APP_END */
+
+    // Mount
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(ElimProductionApp));
+  </script>
+</body>
+</html>
