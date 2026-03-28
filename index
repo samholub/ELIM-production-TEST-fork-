@@ -550,12 +550,20 @@ function useStorage(key, initial, shared = true) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     window.storage.get(key, shared).then(r => {
-      if (r?.value) setVal(JSON.parse(r.value));
+      if (r?.value) {
+        try {
+          const parsed = JSON.parse(r.value);
+          if (parsed != null) setVal(parsed);
+        } catch(err) {}
+      }
     }).catch(() => {}).finally(() => setLoaded(true));
     // Real-time sync: update state when Firebase pushes changes from other devices
     const handler = (e) => {
       if (e.detail?.key === key && e.detail?.value) {
-        try { setVal(JSON.parse(e.detail.value)); } catch(err) {}
+        try {
+          const parsed = JSON.parse(e.detail.value);
+          if (parsed != null) setVal(parsed);
+        } catch(err) {}
       }
     };
     window.addEventListener('elim-sync', handler);
