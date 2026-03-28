@@ -36,6 +36,9 @@
     html { scroll-behavior: smooth; }
     /* Remove tap highlight on mobile */
     * { -webkit-tap-highlight-color: transparent; }
+    /* Hide scrollbar */
+    *::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
     /* Select styling */
     select { -webkit-appearance: none; appearance: none; }
   </style>
@@ -865,6 +868,63 @@ function TroubleshootingSection({ items }) {
 // ═══════════════════════════════════════════
 // CHECK ITEM
 // ═══════════════════════════════════════════
+function AssignDropdown({ assignee, onAssign, isMine, teamMembers }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative", display: "inline-block" }}>
+      <div onClick={() => setOpen(!open)} style={{
+        display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 6, cursor: "pointer",
+        background: "rgba(255,220,180,0.04)", border: `1px solid ${S.cardBorder}`,
+        fontSize: 15, fontFamily: S.sans,
+        color: assignee ? (isMine ? S.accentText : S.textDim) : S.textMuted,
+        fontWeight: isMine ? 600 : 400, fontStyle: assignee ? "normal" : "italic"
+      }}>
+        <span>{assignee || "Assign..."}</span>
+        <span style={{ color: S.textMuted, fontSize: 11, marginLeft: 2 }}>▾</span>
+      </div>
+      {open && (
+        <div style={{
+          position: "absolute", left: 0, top: "100%", marginTop: 4, zIndex: 1000,
+          background: "#1C1A18", border: `1px solid ${S.cardBorder}`, borderRadius: 8,
+          maxHeight: 200, overflowY: "auto", minWidth: 160, boxShadow: "0 8px 24px rgba(0,0,0,0.5)"
+        }}>
+          {assignee && (
+            <div onClick={() => { onAssign(""); setOpen(false); }} style={{
+              padding: "10px 14px", fontSize: 15, color: S.textMuted, fontStyle: "italic",
+              cursor: "pointer", fontFamily: S.sans
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = S.accentGlow}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>Unassign</div>
+          )}
+          {(teamMembers || []).map(m => (
+            <div key={m} onClick={() => { onAssign(m); setOpen(false); }} style={{
+              padding: "10px 14px", fontSize: 15, cursor: "pointer", fontFamily: S.sans,
+              color: m === assignee ? S.accent : S.text, fontWeight: m === assignee ? 600 : 400
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = S.accentGlow}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{m === assignee ? `✓ ${m}` : m}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUpdateNote, photos, setPhotos, isMine, currentUser, teamMembers, isLast, allChecks }) {
   const [expanded, setExpanded] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
@@ -916,16 +976,21 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
             {hasExpandable && <span style={{ color: S.textMuted, fontSize: 10, marginLeft: 6 }}>{expanded ? "▼" : "▶"}</span>}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
-            <select value={assignee || ""} onChange={e => onAssign(e.target.value)} style={{
-              background: "rgba(255,220,180,0.04)", border: `1px solid ${S.cardBorder}`,
-              borderRadius: 6, color: isMine ? S.accentText : S.textDim, fontSize: 14, padding: "4px 10px",
-              cursor: "pointer", outline: "none", fontFamily: S.sans, fontWeight: isMine ? 600 : 400
-            }}>
-              <option value="">Assign...</option>
-              {(teamMembers || []).map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            {taskNote && !editingNote && <span style={{ fontSize: 11, color: S.warn }}>📌</span>}
+            <AssignDropdown assignee={assignee} onAssign={onAssign} isMine={isMine} teamMembers={teamMembers} />
           </div>
+          {taskNote && !expanded && (
+            <div style={{
+              marginTop: 6, padding: "5px 10px",
+              background: "rgba(255,235,210,0.03)",
+              borderLeft: "2px solid rgba(255,200,100,0.15)",
+              borderRadius: "0 6px 6px 0",
+              fontSize: 13, color: S.textDim, lineHeight: 1.4,
+              overflow: "hidden", textOverflow: "ellipsis",
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+            }}>
+              📌 {taskNote}
+            </div>
+          )}
 
           {expanded && (
             <div style={{ marginTop: 10 }}>
@@ -1114,7 +1179,7 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
           <ElimLogo size={28} />
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: S.text }}>ELIM Production</div>
-            <div style={{ fontSize: 12, color: S.textMuted }}>v5.6.0</div>
+            <div style={{ fontSize: 12, color: S.textMuted }}>v5.8.0</div>
           </div>
         </div>
         <div style={{ fontSize: 12, color: S.textMuted, lineHeight: 1.5 }}>Setup checklist for ELIM Church production team. Data syncs across all devices in real time.</div>
@@ -1877,13 +1942,13 @@ function IOListView() {
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <input value={r.from} onChange={e => updateChannel("danteRouting", i, "from", e.target.value)} placeholder="Source"
-                  style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", outline: "none", fontFamily: S.sans }} />
+                  style={{ flex: 1, minWidth: 0, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", outline: "none", fontFamily: S.sans }} />
                 <div style={{ color: S.accent }}>→</div>
                 <input value={r.to} onChange={e => updateChannel("danteRouting", i, "to", e.target.value)} placeholder="Destination"
-                  style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", outline: "none", fontFamily: S.sans }} />
+                  style={{ flex: 1, minWidth: 0, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", outline: "none", fontFamily: S.sans }} />
                 <button onClick={() => removeChannel("danteRouting", i)} style={{
                   background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
-                  borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+                  borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans, flexShrink: 0
                 }}>✕</button>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
@@ -2313,6 +2378,7 @@ class ErrorBoundary extends React.Component {
 // ═══════════════════════════════════════════
 function ElimProductionApp() {
   const contentRef = useRef(null);
+  const scrollPositions = useRef({});
   const [currentUser, setCurrentUser] = useState(() => _ls.get("elim_remember_user") || "");
   const [viewStack, setViewStack] = useState(["my-tasks"]);
   const view = viewStack[viewStack.length - 1];
@@ -2457,6 +2523,7 @@ function ElimProductionApp() {
   }, [teamMembers, currentUser]);
 
   const navigate = useCallback((target) => {
+    scrollPositions.current[view] = window.scrollY;
     let actualView = target;
     let newFilter = null;
     if (target.startsWith("checklist:")) {
@@ -2469,12 +2536,18 @@ function ElimProductionApp() {
       if (idx >= 0) return prev.slice(0, idx + 1);
       return [...prev, actualView];
     });
-  }, []);
+  }, [view]);
 
   const goBack = useCallback(() => {
+    scrollPositions.current[view] = window.scrollY;
     setChecklistFilter(null);
     setViewStack(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
-  }, []);
+  }, [view]);
+
+  useEffect(() => {
+    const saved = scrollPositions.current[view] || 0;
+    requestAnimationFrame(() => { window.scrollTo(0, saved); });
+  }, [view]);
 
   useBackSwipe(viewStack.length > 1 && view !== "dashboard" ? goBack : null, contentRef);
 

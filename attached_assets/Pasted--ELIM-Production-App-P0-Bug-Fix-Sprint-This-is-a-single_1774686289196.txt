@@ -1,0 +1,211 @@
+# ELIM Production App — P0 Bug Fix Sprint
+
+This is a single-file React app (`index.html`, ~2400 lines). All changes are surgical edits to this one file. Do NOT refactor into multiple files, do NOT add dependencies, do NOT change the architecture.
+
+Test repo: https://github.com/samholub/ELIM-production-TEST-fork-
+
+There are 6 bugs to fix. Do them in this order (easiest → hardest).
+
+---
+
+## Bug 1: Visible Scrollbar (CSS — 2 minutes)
+
+**Problem:** The right-side scrollbar is visible on the app. Should be hidden.
+
+**Fix:** Add these rules to the existing `<style>` block in the `<head>` (around line 16-40, after the `* { -webkit-tap-highlight-color: transparent; }` rule):
+
+```css
+/* Hide scrollbar */
+*::-webkit-scrollbar { display: none; }
+* { scrollbar-width: none; }
+```
+
+Use the wildcard selector — this covers the main page scroll AND any inner scrollable containers (like the photo strip `overflowX: "auto"` div). Two lines, done.
+
+---
+
+## Bug 2: Dante I/O Edit Row Overflow (Layout — 5 minutes)
+
+**Problem:** When editing Dante routing entries in the I/O Line List, the from/to input fields and delete button overflow past the right edge of the screen on mobile.
+
+**Where:** Around line 1790. The Dante routing edit mode has two rows:
+- Row 1: `from` input + arrow + `to` input + delete button (all `flex: 1` or fixed)
+- Row 2: `channels` input + protocol select
+
+**Fix:** The row container uses `display: "flex"` with `gap: 8` but has no `overflow` or `minWidth: 0` constraint. The inputs have no `minWidth: 0` so they refuse to shrink below their content width.
+
+Add `minWidth: 0` to both input fields in Row 1 (the `from` and `to` inputs). They currently have `flex: 1` — add `minWidth: 0` so flexbox can actually shrink them. The delete button should have `flexShrink: 0` to prevent it from collapsing.
+
+Specifically, on the two `<input>` elements that have `placeholder="Source"` and `placeholder="Destination"`, add `minWidth: 0` to their style objects.
+
+On the `✕` delete button in that same row, add `flexShrink: 0` to its style.
+
+---
+
+## Bug 3: Assignment Dropdown Styling (Component replacement — 20 minutes)
+
+**Problem:** The `<select>` dropdown for task assignment opens with the native OS white picker, clashing with the dark theme. It's also too small (14px, tight padding).
+
+**Where:** Around line 880, inside the `CheckItem` component. Current code:
+
+```jsx
+<select value={assignee || ""} onChange={e => onAssign(e.target.value)} style={{
+  background: "rgba(255,220,180,0.04)", border: `1px solid ${S.cardBorder}`,
+  borderRadius: 6, color: isMine ? S.accentText : S.textDim, fontSize: 14, padding: "4px 10px",
+  cursor: "pointer", outline: "none", fontFamily: S.sans, fontWeight: isMine ? 600 : 400
+}}>
+  <option value="">Assign...</option>
+  {(teamMembers || []).map(m => <option key={m} value={m}>{m}</option>)}
+</select>
+```
+
+**Fix:** Replace the `<select>` with a custom dropdown component. Requirements:
+
+1. **Default state (collapsed):** Show the assignee name (or "Assign...") as a tappable button-like element. Style:
+   - Font size 15px, padding `6px 12px`
+   - Same dark background/border as current
+   - If assigned to me (`isMine`), use `S.accentText` color and `fontWeight: 600`
+   - Small down-arrow indicator (▾) on the right side, `S.textMuted` color
+   - If unassigned, show "Assign..." in `S.textMuted` italic
+
+2. **Open state (dropdown):** On tap, show a dropdown list of team members ABOVE or BELOW the button (whichever has more room — but defaulting to below is fine for simplicity). Style:
+   - `position: "absolute"`, `zIndex: 1000`
+   - Background: `#1C1A18` (same solid dark used elsewhere for modals)
+   - Border: `1px solid ${S.cardBorder}`, borderRadius 8
+   - Max height 200px with `overflowY: "auto"` in case of long roster
+   - Each option: padding `10px 14px`, font size 15px, color `S.text`
+   - Tap highlight on hover/active: `background: S.accentGlow`
+   - First option is "Unassign" (value `""`) in `S.textMuted` italic — only show this if currently assigned
+   - Currently selected name gets a subtle checkmark or `S.accent` color
+
+3. **Close behavior:** Tapping an option selects it and closes. Tapping outside the dropdown closes it. Use a click-outside listener (`useEffect` with `mousedown`/`touchstart` on `document`).
+
+4. **IMPORTANT:** The dropdown needs `position: "relative"` on its wrapper div so the absolute-positioned list is anchored correctly. The list should not be clipped by parent `overflow: hidden` — if it is, position the wrapper as the nearest positioned ancestor.
+
+This is the most complex fix in the set. Build it as a small inline component (function inside `CheckItem` or a standalone `AssignDropdown` component defined near `CheckItem`). Keep the same `onAssign(value)` callback — the parent API doesn't change.
+
+---
+
+## Bug 4: Notes Surfacing Above the Fold (UI — 10 minutes)
+
+**Problem:** When a task has a saved note, the only indicator is a tiny 📌 icon. The note text is hidden until the task is expanded. Populated notes should preview above the fold.
+
+**Where:** Around line 888-890, inside `CheckItem`, right after the assignment dropdown area.
+
+**Current code for the note indicator:**
+```jsx
+{taskNote && !editingNote && <span style={{ fontSize: 11, color: S.warn }}>📌</span>}
+```
+
+**Fix:** Replace that line with a note preview that shows the actual note text (truncated). When a note exists and the task is NOT expanded:
+
+```jsx
+{taskNote && !expanded && (
+  <div style={{
+    marginTop: 6, padding: "5px 10px",
+    background: "rgba(255,235,210,0.03)",
+    borderLeft: "2px solid rgba(255,200,100,0.15)",
+    borderRadius: "0 6px 6px 0",
+    fontSize: 13, color: S.textDim, lineHeight: 1.4,
+    overflow: "hidden", textOverflow: "ellipsis",
+    display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+  }}>
+    📌 {taskNote}
+  </div>
+)}
+```
+
+Place this AFTER the assignee row `<div>` (the one with `display: "flex", alignItems: "center", gap: 6, marginTop: 4`) and BEFORE the `{expanded && (` block.
+
+Also remove the old `📌` indicator span from inside the assignee row since the note preview replaces it.
+
+Keep the full note editing UI inside the expanded section unchanged — the preview is read-only, the expand area is where you edit.
+
+---
+
+## Bug 5: Scroll Position Preservation (State management — 15 minutes)
+
+**Problem:** When navigating away from a view (e.g., Checklist → Dashboard) and coming back, scroll position resets to top.
+
+**Where:** The `navigate` and `goBack` functions (around line 2277-2290) and the main content container (around line 2353).
+
+**Architecture:** The app uses `window.scrollY` for scrolling (there's no inner scroll container — the page itself scrolls). Views are conditionally rendered (`{view === "checklist" && <ChecklistView ... />}`), so when you navigate away, the component unmounts and scroll resets.
+
+**Fix — use a scroll position map stored in a ref:**
+
+1. Add a ref to store scroll positions per view:
+```jsx
+const scrollPositions = useRef({});
+```
+Place this near the other refs/state at the top of `ElimProductionApp` (around line 2185).
+
+2. In the `navigate` function, save current scroll position before changing view:
+```jsx
+const navigate = useCallback((target) => {
+  scrollPositions.current[view] = window.scrollY;
+  if (target.startsWith("checklist:")) {
+    setChecklistFilter(target.split(":")[1]);
+    setView("crew-tasks");
+  } else {
+    setChecklistFilter(null);
+    setView(target);
+  }
+}, [view]);
+```
+
+3. In the `goBack` function, same thing:
+```jsx
+const goBack = useCallback(() => {
+  if (view !== "dashboard") {
+    scrollPositions.current[view] = window.scrollY;
+    setChecklistFilter(null);
+    setView("dashboard");
+  }
+}, [view]);
+```
+
+4. Add a `useEffect` that restores scroll position when `view` changes:
+```jsx
+useEffect(() => {
+  const saved = scrollPositions.current[view] || 0;
+  // Use requestAnimationFrame to let the new view render first
+  requestAnimationFrame(() => {
+    window.scrollTo(0, saved);
+  });
+}, [view]);
+```
+
+Place this effect near the other effects in `ElimProductionApp`.
+
+**Note:** This won't preserve scroll position across full page refreshes — only within a session's navigation. That's the right behavior for this app.
+
+---
+
+## Bug 6: Hidden Scrollbar Already Done
+
+Bug 1 covers this. The backlog lists "Visible Scrollbar" separately but it's the same fix.
+
+---
+
+## After all fixes
+
+Bump the version string in the app to `v5.8.0`. Search for the current version string (likely `"v5.7.0"` or similar) and update it.
+
+---
+
+## Summary checklist
+
+- [ ] Bug 1: Hide scrollbar (CSS, 2 lines)
+- [ ] Bug 2: Dante I/O overflow (add `minWidth: 0` to inputs, `flexShrink: 0` to button)
+- [ ] Bug 3: Custom assignment dropdown (replace `<select>` with dark-themed dropdown component)
+- [ ] Bug 4: Note preview above the fold (add truncated note text, remove old 📌 icon)
+- [ ] Bug 5: Scroll position preservation (ref map + save/restore on navigate)
+- [ ] Bump version to v5.8.0
+
+**Do NOT:**
+- Split into multiple files
+- Add npm dependencies
+- Change Firebase configuration
+- Modify the storage/sync layer
+- Refactor component structure
+- Change the color system or theme constants

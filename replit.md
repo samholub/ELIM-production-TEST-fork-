@@ -8,6 +8,7 @@ A Progressive Web App (PWA) for managing weekly AV equipment setup and teardown 
 - **Frontend:** React 18 loaded via CDN, JSX transpiled in-browser by Babel Standalone
 - **Database:** Firebase Realtime Database (with localStorage fallback for offline support)
 - **Styling:** Inline JavaScript styles + base CSS in the HTML file
+- **Version:** v5.8.0
 
 ## Project Layout
 
@@ -33,6 +34,13 @@ npm start
 - Role-based task views for ~16 church volunteers
 - PWA support (Add to Home Screen)
 - Mobile-first design for on-site AV setup
+- Default landing view is "My Tasks" (view stack navigation with loop prevention)
+- Custom dark-themed assignment dropdown (replaces native select)
+- Note previews shown above the fold on task cards
+- Scroll position preserved across view navigation
+- Checklist search hidden behind toggle icon
+- Dashboard nav grid: Power Sequence, I/O Line List, Signal Flow, Repairs (2×2)
+- Equipment & Purchases shown as "Coming soon" in Settings
 
 ## Deployment
 
