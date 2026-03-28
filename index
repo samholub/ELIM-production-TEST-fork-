@@ -968,7 +968,7 @@ function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUp
   );
 }
 // ═══════════════════════════════════════════
-function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek }) {
+function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments }) {
   const [newName, setNewName] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
 
@@ -987,8 +987,17 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
   };
 
   const removeMember = (name) => {
-    if (!confirm(`Remove ${name} from the roster? Their task assignments will stay until reassigned.`)) return;
+    if (!confirm(`Remove ${name} from the roster? Their task assignments will be cleared.`)) return;
     setRoster(roster.filter(r => r.name !== name));
+    // Clear all task assignments belonging to the removed member
+    if (assignments && setAssignments) {
+      const updated = { ...assignments };
+      let changed = false;
+      Object.keys(updated).forEach(taskId => {
+        if (updated[taskId] === name) { delete updated[taskId]; changed = true; }
+      });
+      if (changed) setAssignments(updated);
+    }
     if (currentUser === name) {
       _ls.del("elim_remember_user");
       setCurrentUser("");
@@ -2438,7 +2447,7 @@ function ElimProductionApp() {
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} />}
         {view === "power-seq" && <PowerSeqView />}
         {view === "io-list" && <IOListView />}
-        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} />}
+        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} />}
         {view === "network" && <SignalFlowView />}
         {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
         {view === "repairs" && <RepairsView />}
