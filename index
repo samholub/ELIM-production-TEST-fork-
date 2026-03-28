@@ -2339,12 +2339,41 @@ function ElimProductionApp() {
       ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
       : timerState.accumulated || 0;
     const record = { date: new Date().toISOString().slice(0, 10), pct, elapsed: finalElapsed, tasks: totalChecked, total: totalItems };
-    setHistory([record, ...history].slice(0, 52)); // keep last year of setups
-    // Clear progress
-    setChecks({});
-    setCompletions({});
-    setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+    // Write reset flag before clearing — if interrupted, next load will complete the reset
+    window.storage.set("elim3-pending-reset", JSON.stringify(true)).then(() => {
+      setHistory([record, ...history].slice(0, 52));
+      setChecks({});
+      setCompletions({});
+      setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+      // Remove flag once all clears are dispatched
+      window.storage.delete("elim3-pending-reset").catch(() => {});
+    }).catch(() => {
+      // Firebase unavailable — still clear locally; flag persists in localStorage to retry on next load
+      setHistory([record, ...history].slice(0, 52));
+      setChecks({});
+      setCompletions({});
+      setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+    });
   }, [checklistData, checks, timerState, history, setChecks, setCompletions, setTimerState, setHistory]);
+
+  // On load: if a reset was interrupted mid-flight, complete it now
+  useEffect(() => {
+    if (!loaded) return;
+    window.storage.get("elim3-pending-reset").then(r => {
+      if (r?.value) {
+        try {
+          const flag = JSON.parse(r.value);
+          if (flag) {
+            setChecks({});
+            setCompletions({});
+            setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+            window.storage.delete("elim3-pending-reset").catch(() => {});
+          }
+        } catch(e) {}
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   // Derive team lists from roster
   const teamMembers = roster.map(r => r.name);
