@@ -74,6 +74,11 @@
       keys() { try { const r=[]; for(let i=0;i<localStorage.length;i++) r.push(localStorage.key(i)); return r; } catch(e) { return []; } }
     };
 
+    // Tracks keys where a local write is newer than what Firebase last confirmed.
+    // While a key is in this set, incoming elim-sync events for it are ignored so
+    // a Firebase listener firing stale data cannot silently overwrite local changes.
+    const _pendingWrites = new Set();
+
     // Real-time listeners — notify React when data changes remotely
     const _listeners = {};
     function _startListener(key) {
@@ -82,8 +87,11 @@
       _fb.child(key.replace(/\./g, '_')).on('value', (snap) => {
         const val = snap.val();
         if (val !== null && val !== undefined) {
-          _ls.set('elim_' + key, val);
-          window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: val } }));
+          // Only propagate to React if we don't have a pending local write for this key
+          if (!_pendingWrites.has(key)) {
+            _ls.set('elim_' + key, val);
+            window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: val } }));
+          }
         }
       });
     }
@@ -103,7 +111,7 @@
           }
           const cached = _ls.get('elim_' + key);
           if (cached !== null) {
-            if (_fb) _fb.child(fbKey).set(cached).catch(() => {});
+            // Do not push localStorage back to Firebase — avoids clobbering newer data
             return { key, value: cached, shared: !!shared };
           }
           throw new Error('not found');
@@ -118,8 +126,21 @@
         _ls.set('elim_' + key, value);
         _startListener(key);
         if (_fb) {
-          try { await _fb.child(fbKey).set(value); }
-          catch (e) { console.warn('Firebase write failed:', e.message); }
+          _pendingWrites.add(key);
+          const attemptWrite = (attemptsLeft) => {
+            _fb.child(fbKey).set(value).then(() => {
+              _pendingWrites.delete(key);
+            }).catch((e) => {
+              console.warn('Firebase write failed:', e.message);
+              if (attemptsLeft > 0) {
+                setTimeout(() => attemptWrite(attemptsLeft - 1), 5000);
+              } else {
+                // All retries exhausted — remove pending flag so listener can resume
+                _pendingWrites.delete(key);
+              }
+            });
+          };
+          attemptWrite(1);
         }
         return { key, value, shared: !!shared };
       },
@@ -529,12 +550,20 @@ function useStorage(key, initial, shared = true) {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     window.storage.get(key, shared).then(r => {
-      if (r?.value) setVal(JSON.parse(r.value));
+      if (r?.value) {
+        try {
+          const parsed = JSON.parse(r.value);
+          if (parsed != null) setVal(parsed);
+        } catch(err) {}
+      }
     }).catch(() => {}).finally(() => setLoaded(true));
     // Real-time sync: update state when Firebase pushes changes from other devices
     const handler = (e) => {
       if (e.detail?.key === key && e.detail?.value) {
-        try { setVal(JSON.parse(e.detail.value)); } catch(err) {}
+        try {
+          const parsed = JSON.parse(e.detail.value);
+          if (parsed != null) setVal(parsed);
+        } catch(err) {}
       }
     };
     window.addEventListener('elim-sync', handler);
@@ -924,7 +953,7 @@ function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUp
       {depWarning && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
           onClick={() => setDepWarning(null)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: S.card, border: `1px solid #F59E0B`, borderRadius: 14, padding: "20px", maxWidth: 340, width: "100%" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#1C1A18", border: `1px solid #F59E0B`, borderRadius: 14, padding: "20px", maxWidth: 340, width: "100%" }}>
             <div style={{ fontSize: 18, textAlign: "center", marginBottom: 8 }}>⚠️</div>
             <div style={{ fontSize: 15, fontWeight: 600, color: "#F59E0B", textAlign: "center", marginBottom: 6 }}>Dependency Not Complete</div>
             <div style={{ fontSize: 14, color: S.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 16 }}>"{depWarning}" isn't complete yet. Continue anyway?</div>
@@ -939,7 +968,7 @@ function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUp
   );
 }
 // ═══════════════════════════════════════════
-function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek }) {
+function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments }) {
   const [newName, setNewName] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
 
@@ -958,8 +987,17 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
   };
 
   const removeMember = (name) => {
-    if (!confirm(`Remove ${name} from the roster? Their task assignments will stay until reassigned.`)) return;
+    if (!confirm(`Remove ${name} from the roster? Their task assignments will be cleared.`)) return;
     setRoster(roster.filter(r => r.name !== name));
+    // Clear all task assignments belonging to the removed member
+    if (assignments && setAssignments) {
+      const updated = { ...assignments };
+      let changed = false;
+      Object.keys(updated).forEach(taskId => {
+        if (updated[taskId] === name) { delete updated[taskId]; changed = true; }
+      });
+      if (changed) setAssignments(updated);
+    }
     if (currentUser === name) {
       _ls.del("elim_remember_user");
       setCurrentUser("");
@@ -1080,7 +1118,7 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
 // ═══════════════════════════════════════════
 function DashboardView({ onNavigate, checks, totalItems, assignments, currentUser, elapsed, running, setRunning, teamMembers, history, remaining, targetSeconds, onSetTarget, allItems }) {
   const effectiveAllItems = allItems || ALL_ITEMS;
-  const totalChecked = Object.values(checks).filter(Boolean).length;
+  const totalChecked = effectiveAllItems.filter(i => checks[i.id]).length;
   const pct = Math.round((totalChecked / totalItems) * 100);
   const myItems = effectiveAllItems.filter(i => assignments[i.id] === currentUser);
   const myDone = myItems.filter(i => checks[i.id]).length;
@@ -1305,7 +1343,7 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
     if (nc[itemId]) { ncomp[itemId] = { name: currentUser || "Someone" }; }
     else { delete ncomp[itemId]; }
     setChecks(nc); setCompletions(ncomp);
-    if (!running) setRunning(true);
+    if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
 
   const addTaskToSection = (sectionId) => {
@@ -1320,10 +1358,16 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   };
 
   const removeTask = (sectionId, taskId) => {
+    if (!window.confirm("Delete this task? This cannot be undone.")) return;
     const updated = JSON.parse(JSON.stringify(data));
     const sec = updated.find(s => s.id === sectionId);
     if (sec) sec.items = sec.items.filter(i => i.id !== taskId);
     setChecklistData(updated);
+    // Clean up orphaned entries in all supporting keys for this task ID
+    if (checks[taskId] !== undefined) { const nc = { ...checks }; delete nc[taskId]; setChecks(nc); }
+    if (assignments[taskId] !== undefined) { const na = { ...assignments }; delete na[taskId]; setAssignments(na); }
+    if (taskNotes[taskId] !== undefined) { const nn = { ...taskNotes }; delete nn[taskId]; setTaskNotes(nn); }
+    if (completions[taskId] !== undefined) { const nk = { ...completions }; delete nk[taskId]; setCompletions(nk); }
   };
 
   const saveTaskEdit = (sectionId, taskId) => {
@@ -1337,7 +1381,8 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   };
 
   const totalItems = data.reduce((s, sec) => s + sec.items.length, 0);
-  const totalChecked = Object.values(checks).filter(Boolean).length;
+  const allDataItems = data.flatMap(s => s.items);
+  const totalChecked = allDataItems.filter(i => checks[i.id]).length;
   const pct = Math.round((totalChecked / totalItems) * 100);
 
   const searchLower = searchText.trim().toLowerCase();
@@ -1376,7 +1421,7 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
             }}>✕</button>
           )}
         </div>
-        {setChecklistData && (
+        {setChecklistData && currentUser === "Sam" && (
           <button onClick={() => { setEditMode(!editMode); setAddingTaskInSection(null); setEditingTaskId(null); }} style={{
             padding: "8px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: S.sans,
             background: editMode ? S.accentGlow : "rgba(255,235,210,0.04)",
@@ -1522,7 +1567,7 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
     if (nc[itemId]) { ncomp[itemId] = { name: currentUser }; }
     else { delete ncomp[itemId]; }
     setChecks(nc); setCompletions(ncomp);
-    if (!running) setRunning(true);
+    if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
   const hasTasks = data.some(s => s.items.some(i => isUnassigned ? !assignments[i.id] : assignments[i.id] === viewUser));
   return (
@@ -2177,6 +2222,50 @@ function PlaceholderView({ icon, title, description }) {
 }
 
 // ═══════════════════════════════════════════
+// ERROR BOUNDARY
+// ═══════════════════════════════════════════
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('ELIM app render error:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return React.createElement('div', {
+        style: {
+          minHeight: '100vh', background: '#111010', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', fontFamily: "'DM Sans', system-ui, sans-serif",
+          color: '#F0E6D8', padding: 24, textAlign: 'center'
+        }
+      },
+        React.createElement('div', { style: { maxWidth: 320 } },
+          React.createElement('div', { style: { fontSize: 40, marginBottom: 16 } }, '⚠️'),
+          React.createElement('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'Something went wrong'),
+          React.createElement('div', { style: { fontSize: 14, color: '#B8A894', marginBottom: 24, lineHeight: 1.5 } },
+            'The app hit an unexpected error. Your data is safe. Tap below to reload.'
+          ),
+          React.createElement('button', {
+            onClick: () => window.location.reload(),
+            style: {
+              padding: '12px 28px', borderRadius: 10, fontSize: 15, fontWeight: 700,
+              background: 'rgba(232,137,58,0.15)', border: '1px solid rgba(232,137,58,0.3)',
+              color: '#E8893A', cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif"
+            }
+          }, 'Tap to Reload')
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ═══════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════
 function ElimProductionApp() {
@@ -2243,18 +2332,48 @@ function ElimProductionApp() {
   const newWeek = useCallback(() => {
     // Save lightweight history
     const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
-    const totalChecked = Object.values(checks).filter(Boolean).length;
+    const liveItems = checklistData.flatMap(s => s.items);
+    const totalChecked = liveItems.filter(i => checks[i.id]).length;
     const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
     const finalElapsed = timerState.startedAt
       ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
       : timerState.accumulated || 0;
     const record = { date: new Date().toISOString().slice(0, 10), pct, elapsed: finalElapsed, tasks: totalChecked, total: totalItems };
-    setHistory([record, ...history].slice(0, 52)); // keep last year of setups
-    // Clear progress
-    setChecks({});
-    setCompletions({});
-    setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+    // Write reset flag before clearing — if interrupted, next load will complete the reset
+    window.storage.set("elim3-pending-reset", JSON.stringify(true)).then(() => {
+      setHistory([record, ...history].slice(0, 52));
+      setChecks({});
+      setCompletions({});
+      setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+      // Remove flag once all clears are dispatched
+      window.storage.delete("elim3-pending-reset").catch(() => {});
+    }).catch(() => {
+      // Firebase unavailable — still clear locally; flag persists in localStorage to retry on next load
+      setHistory([record, ...history].slice(0, 52));
+      setChecks({});
+      setCompletions({});
+      setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+    });
   }, [checklistData, checks, timerState, history, setChecks, setCompletions, setTimerState, setHistory]);
+
+  // On load: if a reset was interrupted mid-flight, complete it now
+  useEffect(() => {
+    if (!loaded) return;
+    window.storage.get("elim3-pending-reset").then(r => {
+      if (r?.value) {
+        try {
+          const flag = JSON.parse(r.value);
+          if (flag) {
+            setChecks({});
+            setCompletions({});
+            setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+            window.storage.delete("elim3-pending-reset").catch(() => {});
+          }
+        } catch(e) {}
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded]);
 
   // Derive team lists from roster
   const teamMembers = roster.map(r => r.name);
@@ -2357,7 +2476,7 @@ function ElimProductionApp() {
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} />}
         {view === "power-seq" && <PowerSeqView />}
         {view === "io-list" && <IOListView />}
-        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} />}
+        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} />}
         {view === "network" && <SignalFlowView />}
         {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
         {view === "repairs" && <RepairsView />}
@@ -2371,7 +2490,7 @@ function ElimProductionApp() {
 
     // Mount
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(React.createElement(ElimProductionApp));
+    root.render(React.createElement(ErrorBoundary, null, React.createElement(ElimProductionApp)));
   </script>
 </body>
 </html>
