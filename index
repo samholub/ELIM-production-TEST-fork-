@@ -74,6 +74,11 @@
       keys() { try { const r=[]; for(let i=0;i<localStorage.length;i++) r.push(localStorage.key(i)); return r; } catch(e) { return []; } }
     };
 
+    // Tracks keys where a local write is newer than what Firebase last confirmed.
+    // While a key is in this set, incoming elim-sync events for it are ignored so
+    // a Firebase listener firing stale data cannot silently overwrite local changes.
+    const _pendingWrites = new Set();
+
     // Real-time listeners — notify React when data changes remotely
     const _listeners = {};
     function _startListener(key) {
@@ -82,8 +87,11 @@
       _fb.child(key.replace(/\./g, '_')).on('value', (snap) => {
         const val = snap.val();
         if (val !== null && val !== undefined) {
-          _ls.set('elim_' + key, val);
-          window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: val } }));
+          // Only propagate to React if we don't have a pending local write for this key
+          if (!_pendingWrites.has(key)) {
+            _ls.set('elim_' + key, val);
+            window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: val } }));
+          }
         }
       });
     }
@@ -103,7 +111,7 @@
           }
           const cached = _ls.get('elim_' + key);
           if (cached !== null) {
-            if (_fb) _fb.child(fbKey).set(cached).catch(() => {});
+            // Do not push localStorage back to Firebase — avoids clobbering newer data
             return { key, value: cached, shared: !!shared };
           }
           throw new Error('not found');
@@ -118,8 +126,21 @@
         _ls.set('elim_' + key, value);
         _startListener(key);
         if (_fb) {
-          try { await _fb.child(fbKey).set(value); }
-          catch (e) { console.warn('Firebase write failed:', e.message); }
+          _pendingWrites.add(key);
+          const attemptWrite = (attemptsLeft) => {
+            _fb.child(fbKey).set(value).then(() => {
+              _pendingWrites.delete(key);
+            }).catch((e) => {
+              console.warn('Firebase write failed:', e.message);
+              if (attemptsLeft > 0) {
+                setTimeout(() => attemptWrite(attemptsLeft - 1), 5000);
+              } else {
+                // All retries exhausted — remove pending flag so listener can resume
+                _pendingWrites.delete(key);
+              }
+            });
+          };
+          attemptWrite(1);
         }
         return { key, value, shared: !!shared };
       },
