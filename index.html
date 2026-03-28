@@ -1567,7 +1567,7 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   );
 }
 
-function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers, elapsed, running, setRunning, remaining, targetSeconds, targetUser, checklistData }) {
+function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers, elapsed, running, setRunning, remaining, targetSeconds, targetUser, checklistData, onNavigate }) {
   const isUnassigned = targetUser === "__unassigned__";
   const viewUser = isUnassigned ? null : (targetUser || currentUser);
   const isOwnView = !targetUser;
@@ -1613,6 +1613,13 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
           <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.5 }}>👤</div>
           <div style={{ fontSize: 16, fontWeight: 600, color: S.textDim }}>{isUnassigned ? "All tasks are assigned" : isOwnView ? "No tasks assigned to you yet" : `No tasks assigned to ${viewUser}`}</div>
           <div style={{ fontSize: 14, marginTop: 6 }}>{isUnassigned ? "Every task has an owner." : isOwnView ? "Head to the Checklist and assign yourself some tasks." : "Assign tasks from the full Checklist view."}</div>
+          {isOwnView && onNavigate && (
+            <button onClick={() => onNavigate("checklist")} style={{
+              marginTop: 20, padding: "11px 22px", borderRadius: 10, cursor: "pointer",
+              fontFamily: S.sans, fontSize: 14, fontWeight: 700,
+              background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText
+            }}>View Full Checklist</button>
+          )}
         </div>
       )}
     </div>
@@ -2282,7 +2289,8 @@ class ErrorBoundary extends React.Component {
 function ElimProductionApp() {
   const contentRef = useRef(null);
   const [currentUser, setCurrentUser] = useState(() => _ls.get("elim_remember_user") || "");
-  const [view, setView] = useState("dashboard");
+  const [viewStack, setViewStack] = useState(["my-tasks"]);
+  const view = viewStack[viewStack.length - 1];
   const [checklistFilter, setChecklistFilter] = useState(null);
   const [checks, setChecks, c1] = useStorage("elim3-checks", {});
   const [assignments, setAssignments, c2] = useStorage("elim3-assign", {});
@@ -2424,20 +2432,26 @@ function ElimProductionApp() {
   }, [teamMembers, currentUser]);
 
   const navigate = useCallback((target) => {
+    let actualView = target;
+    let newFilter = null;
     if (target.startsWith("checklist:")) {
-      setChecklistFilter(target.split(":")[1]);
-      setView("crew-tasks");
-    } else {
-      setChecklistFilter(null);
-      setView(target);
+      newFilter = target.split(":")[1];
+      actualView = "crew-tasks";
     }
+    setChecklistFilter(newFilter);
+    setViewStack(prev => {
+      const idx = prev.indexOf(actualView);
+      if (idx >= 0) return prev.slice(0, idx + 1);
+      return [...prev, actualView];
+    });
   }, []);
 
   const goBack = useCallback(() => {
-    if (view !== "dashboard") { setChecklistFilter(null); setView("dashboard"); }
-  }, [view]);
+    setChecklistFilter(null);
+    setViewStack(prev => prev.length > 1 ? prev.slice(0, -1) : prev);
+  }, []);
 
-  useBackSwipe(view !== "dashboard" ? goBack : null, contentRef);
+  useBackSwipe(viewStack.length > 1 ? goBack : null, contentRef);
 
   const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
   const allItems = useMemo(
@@ -2489,24 +2503,32 @@ function ElimProductionApp() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <Header currentUser={currentUser} title={titles[view] || "ELIM Production"}
         subtitle={null}
-        onBack={view !== "dashboard" ? goBack : null}
+        onBack={viewStack.length > 1 ? goBack : null}
         onSwitchUser={view === "dashboard" ? () => selectUser("") : null}
         onSettings={view === "dashboard" ? () => navigate("settings") : null}
         rightContent={(view === "checklist" || view === "my-tasks" || view === "crew-tasks") ? (
-          <div onClick={() => setRunning(!running)} style={{
-            fontFamily: S.mono, fontSize: 14, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer",
-            color: targetSeconds ? timerColor(remaining, targetSeconds) : running ? "#E88A8A" : S.textMuted,
-            background: running ? "rgba(255,255,255,0.04)" : S.card,
-            border: `1px solid ${targetSeconds && remaining !== null && remaining < targetSeconds * 0.25 ? "rgba(232,93,93,0.3)" : running ? "rgba(255,255,255,0.08)" : S.cardBorder}`
-          }}>{targetSeconds ? formatTime(remaining) : `${running ? "⏱" : "▶"} ${formatTime(elapsed)}`}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div onClick={() => setRunning(!running)} style={{
+              fontFamily: S.mono, fontSize: 14, fontWeight: 700, padding: "5px 10px", borderRadius: 8, cursor: "pointer",
+              color: targetSeconds ? timerColor(remaining, targetSeconds) : running ? "#E88A8A" : S.textMuted,
+              background: running ? "rgba(255,255,255,0.04)" : S.card,
+              border: `1px solid ${targetSeconds && remaining !== null && remaining < targetSeconds * 0.25 ? "rgba(232,93,93,0.3)" : running ? "rgba(255,255,255,0.08)" : S.cardBorder}`
+            }}>{targetSeconds ? formatTime(remaining) : `${running ? "⏱" : "▶"} ${formatTime(elapsed)}`}</div>
+            {view === "my-tasks" && (
+              <button onClick={() => navigate("dashboard")} style={{
+                padding: "5px 8px", borderRadius: 8, cursor: "pointer", fontFamily: S.sans, fontSize: 17,
+                background: S.card, border: `1px solid ${S.cardBorder}`, color: S.textMuted, lineHeight: 1
+              }} title="Dashboard">▦</button>
+            )}
+          </div>
         ) : null}
       />
       <div style={{ height: "calc(48px + env(safe-area-inset-top, 0px))" }} />
       <div ref={contentRef} style={{ maxWidth: 600, margin: "0 auto" }}>
         {view === "dashboard" && <DashboardView onNavigate={navigate} checks={checks} totalItems={totalItems} assignments={assignments} currentUser={currentUser} elapsed={elapsed} running={running} setRunning={setRunning} teamMembers={teamMembers} history={history} remaining={remaining} targetSeconds={targetSeconds} onSetTarget={setTarget} allItems={allItems} />}
         {view === "checklist" && <ChecklistView {...sharedProps} {...checklistProps} elapsed={elapsed} running={running} setRunning={setRunning} initialFilter={checklistFilter} noAutoExpand={true} showUpdateBanner={showChecklistUpdateBanner} onApplyUpdate={applyChecklistUpdate} />}
-        {view === "my-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} checklistData={checklistData} />}
-        {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} />}
+        {view === "my-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} checklistData={checklistData} onNavigate={navigate} />}
+        {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} onNavigate={navigate} />}
         {view === "power-seq" && <PowerSeqView />}
         {view === "io-list" && <IOListView />}
         {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} />}
