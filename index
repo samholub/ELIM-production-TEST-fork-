@@ -1320,6 +1320,7 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   };
 
   const removeTask = (sectionId, taskId) => {
+    if (!window.confirm("Delete this task? This cannot be undone.")) return;
     const updated = JSON.parse(JSON.stringify(data));
     const sec = updated.find(s => s.id === sectionId);
     if (sec) sec.items = sec.items.filter(i => i.id !== taskId);
@@ -1376,7 +1377,7 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
             }}>✕</button>
           )}
         </div>
-        {setChecklistData && (
+        {setChecklistData && currentUser === "Sam" && (
           <button onClick={() => { setEditMode(!editMode); setAddingTaskInSection(null); setEditingTaskId(null); }} style={{
             padding: "8px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: S.sans,
             background: editMode ? S.accentGlow : "rgba(255,235,210,0.04)",
