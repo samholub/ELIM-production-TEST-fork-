@@ -1101,7 +1101,7 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
 // ═══════════════════════════════════════════
 function DashboardView({ onNavigate, checks, totalItems, assignments, currentUser, elapsed, running, setRunning, teamMembers, history, remaining, targetSeconds, onSetTarget, allItems }) {
   const effectiveAllItems = allItems || ALL_ITEMS;
-  const totalChecked = Object.values(checks).filter(Boolean).length;
+  const totalChecked = effectiveAllItems.filter(i => checks[i.id]).length;
   const pct = Math.round((totalChecked / totalItems) * 100);
   const myItems = effectiveAllItems.filter(i => assignments[i.id] === currentUser);
   const myDone = myItems.filter(i => checks[i.id]).length;
@@ -1346,6 +1346,11 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
     const sec = updated.find(s => s.id === sectionId);
     if (sec) sec.items = sec.items.filter(i => i.id !== taskId);
     setChecklistData(updated);
+    // Clean up orphaned entries in all supporting keys for this task ID
+    if (checks[taskId] !== undefined) { const nc = { ...checks }; delete nc[taskId]; setChecks(nc); }
+    if (assignments[taskId] !== undefined) { const na = { ...assignments }; delete na[taskId]; setAssignments(na); }
+    if (taskNotes[taskId] !== undefined) { const nn = { ...taskNotes }; delete nn[taskId]; setTaskNotes(nn); }
+    if (completions[taskId] !== undefined) { const nk = { ...completions }; delete nk[taskId]; setCompletions(nk); }
   };
 
   const saveTaskEdit = (sectionId, taskId) => {
@@ -1359,7 +1364,8 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   };
 
   const totalItems = data.reduce((s, sec) => s + sec.items.length, 0);
-  const totalChecked = Object.values(checks).filter(Boolean).length;
+  const allDataItems = data.flatMap(s => s.items);
+  const totalChecked = allDataItems.filter(i => checks[i.id]).length;
   const pct = Math.round((totalChecked / totalItems) * 100);
 
   const searchLower = searchText.trim().toLowerCase();
@@ -2309,7 +2315,8 @@ function ElimProductionApp() {
   const newWeek = useCallback(() => {
     // Save lightweight history
     const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
-    const totalChecked = Object.values(checks).filter(Boolean).length;
+    const liveItems = checklistData.flatMap(s => s.items);
+    const totalChecked = liveItems.filter(i => checks[i.id]).length;
     const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
     const finalElapsed = timerState.startedAt
       ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
