@@ -1,0 +1,172 @@
+# ELIM Production App — Cursor Rules
+
+## Project Identity
+
+This is a **single-file React PWA** (`index.html`, ~2,400 lines) for ELIM Church — a fully portable church that deploys and tears down at varying venues 1-2x/week with a volunteer crew under time pressure. The app manages setup/teardown checklists, crew task assignments, equipment tracking, and real-time cross-device sync.
+
+**Live:** https://elim-production.web.app
+**Current version:** v5.6.0
+
+## Architecture — Non-Negotiable Constraints
+
+1. **Single-file architecture.** Everything lives in `index.html` — React components, data constants, styles, Firebase config. No build step, no bundler, no separate CSS/JS files. React 18 is loaded via CDN. This is intentional and must be preserved.
+
+2. **No JSX transpilation.** Components use `React.createElement()` calls directly. Babel is loaded via CDN for in-browser JSX transformation in the `<script type="text/babel">` block. All component code lives inside this single script block.
+
+3. **Firebase Realtime Database** is the sync layer. No authentication — users select their name on launch. All data is shared and visible to all users. The `window.storage` API wrapper abstracts Firebase with a localStorage fallback.
+
+4. **Inline styles only.** No CSS framework, no CSS-in-JS library, no separate stylesheets. All styling is inline via React style objects.
+
+5. **CDN dependencies only.** React, ReactDOM, Babel, Firebase, Google Fonts (DM Sans + JetBrains Mono) — all loaded from CDNs. No npm, no node_modules, no package.json.
+
+## Code Patterns You Must Follow
+
+### Storage Hook
+```javascript
+// useStorage(key, defaultValue, shared) — the core data pattern
+const [value, setValue, loaded] = useStorage("elim3-key", defaultValue);
+```
+- Reads from Firebase first, falls back to localStorage, falls back to in-memory
+- Real-time sync via Firebase `.on('value')` listeners that dispatch `elim-sync` CustomEvents
+- `loaded` boolean prevents rendering before data is ready
+
+### Deep Cloning
+The codebase uses `JSON.parse(JSON.stringify(obj))` for deep clones before mutations. This pattern appears 8+ times. A `deepClone()` utility should be extracted (it's in the backlog).
+
+### Component Props Pattern
+Components receive state + setters as props from `ElimProductionApp` (the root). No context providers, no Redux, no state management library. Props are passed explicitly.
+
+### Navigation
+Custom navigation via `view` state string + `viewStack` array for back navigation. `useBackSwipe` hook provides follow-finger swipe-back gesture. No React Router.
+
+### Card Styling
+`cardStyle()` function computes card styles to avoid CSS property conflicts (especially `border` vs `borderLeft`). Always use this function for task card styling.
+
+## Data Architecture
+
+### Canonical Source of Truth
+`CHECKLIST_DATA` constant in code is the canonical source. Firebase is the live store.
+- First load (or after reset) → seeds Firebase from code constant
+- After that → Firebase is the live data store
+- Structural changes go through code first → deploy → reset
+
+Same pattern for `DEFAULT_REPAIRS`, `DEFAULT_IO_LINE_LIST`, `DEFAULT_ROSTER`.
+
+### Storage Keys
+| Key | Content |
+|-----|---------|
+| `elim3-checks` | Checkbox states (object: taskId → boolean) |
+| `elim3-assign` | Task assignments (object: taskId → userName) |
+| `elim3-comp` | Completion metadata |
+| `elim3-notes` | Per-task notes (object: taskId → string) |
+| `elim3-photos` | Photo data (base64 strings) |
+| `elim3-roster` | Team roster (array of {name, color}) |
+| `elim3-timer` | Timer state ({startedAt, accumulated, targetMinutes}) |
+| `elim3-history` | Setup history (array, last 52 weeks) |
+| `elim3-io-config` | I/O line list overrides |
+| `elim3-repairs` | Repairs list |
+| `elim3-checklist-data` | Checklist structure (sections + tasks) |
+
+### What Resets Clear vs Preserve
+- **Cleared:** Checkboxes, completions, timer
+- **Preserved:** Assignments, notes, photos, roster, I/O config, repairs, checklist structure
+
+## Design System: "Warm Night"
+
+### Color System — 4 Visual States
+| State | Treatment |
+|-------|-----------|
+| Yours (incomplete) | Orange left border (#D4763A) + "YOU" badge |
+| Completed | Green (#5CB87A) |
+| Unassigned | Dashed border, lighter background, italic dimmed text |
+| Others' tasks | Neutral (no special treatment) |
+
+### Theme Values
+- Background: `#111010` (warm black)
+- Primary text: `#F0E6D8` (warm cream)
+- Secondary text: `#B8A894`
+- Muted text: `#7A6E60`
+- Primary accent: `#D4763A` (orange)
+- Success: `#5CB87A` (green)
+- Card backgrounds: `rgba(240,230,216,0.04)` to `rgba(240,230,216,0.06)`
+- Card borders: `rgba(240,230,216,0.08)`
+
+### Typography
+- Body: DM Sans, 16px for task text
+- Data/timers: JetBrains Mono
+- Checkboxes: 28px (mobile thumb-sized)
+
+### Design Principles
+- Per-person team colors appear ONLY in Settings roster management — nowhere else in the main UI
+- Progressive disclosure: details, photos, troubleshooting hidden until expanded
+- Quiet by default: collapsed sections, minimal badges, no timestamps
+- Calm urgency: timer uses color transition (green→yellow→red), not flashing
+
+## Component Map (~20 components, all in index.html)
+
+| Component | Lines | Purpose |
+|-----------|-------|---------|
+| `ElimProductionApp` | ~190 | Root: owns all state via useStorage, routing, back navigation |
+| `Header` | ~55 | Fixed header with back button, user switcher, settings gear |
+| `ElimLogo` | ~25 | SVG brand mark (chevrons + block E) |
+| `DashboardView` | ~200 | Hero progress, timer, crew status, nav cards |
+| `ChecklistView` | ~230 | Full checklist with search, edit mode, sections |
+| `CheckItem` | ~115 | Single task card: checkbox, assignee, notes, photos, dependencies |
+| `MyTasksView` | ~50 | Personal task queue (reuses CheckItem); accepts targetUser prop |
+| `SettingsView` | ~140 | Reset, roster management, setup history, about |
+| `PowerSeqView` | ~15 | 10-step power sequence reference |
+| `IOListView` | ~255 | Editable I/O line list (inputs, outputs, Dante tabs) |
+| `SignalFlowView` | ~170 | Three SVG diagrams (Audio, Video, Network/Dante) |
+| `RepairsView` | ~155 | CRUD repairs tracker with search and priorities |
+| `PlaceholderView` | ~15 | Stub for Equipment and Purchases (should be removed) |
+| `ProgressBar` | ~15 | Animated progress bar |
+| `PhotoSlot` / `PhotoSlots` | ~80 | Camera capture/upload with auto-resize |
+| `TroubleshootingSection` | ~25 | Expandable Q&A per task |
+
+## Hooks
+
+| Hook | Purpose |
+|------|---------|
+| `useStorage(key, default, shared)` | Firebase + localStorage sync with real-time listeners |
+| `useBackSwipe(onBack, contentRef)` | Follow-finger swipe-back gesture (35% threshold, header zone exclusion) |
+
+## Known Bugs (Priority 0 — fix these first)
+
+1. **Dependency warning modal unreadable** — backdrop too transparent, text bleeds through
+2. **Dante I/O fields overflow** — edit fields extend past screen edge on mobile
+3. **Assignment dropdown: white background** — native OS picker clashes with dark theme
+4. **Assignment dropdown: too small** — 14px text, cramped padding
+5. **Populated notes hidden** — notes only visible after expanding task (📌 hint only)
+6. **Visible scrollbar** — needs CSS hiding
+7. **Scroll position resets on navigation** — no position preservation between views
+
+## Strategic UX Issues (Priority 1 — discuss before implementing)
+
+1. **Navigation model is backwards** — crew members want "My Tasks" immediately, not a dashboard-first flow with an extra tap
+2. **Visual noise** — Equipment and Purchases nav cards lead to placeholder screens; search bar always visible for 59 tasks; edit mode button visible to all 16 team members when only 1 needs it
+3. **Task card density** — assignment dropdown always visible even when assignments are set; consider showing plain text by default
+4. **No "All" assignment option** — tasks everyone does (prayer, unloading) have no good assignment choice
+
+## Deployment
+
+```
+cd C:\Users\sammh\elim-production\
+firebase deploy
+```
+Firebase Hosting (free Spark plan). Redeploying only replaces `index.html` — all team data in Firebase Realtime Database is never affected.
+
+## Team Context
+
+- ~16 volunteers, not developers
+- Used on phones during active setup under time pressure
+- Sam (app owner) operates ATEM and manages stream
+- No training possible — app must be self-evident
+- Volunteer turnover means the app can't assume familiarity
+
+## What "Good" Looks Like for This Project
+
+- **Volunteer-operable:** If a volunteer can't figure it out in 3 seconds, it's too complex
+- **No failure points:** The app must work on spotty venue WiFi, old phones, and with no training
+- **Practical over polished:** Ship a fix that works over a refactor that's elegant
+- **Replace, don't customize:** Off-the-shelf patterns beat clever abstractions
+- **Measure before building:** Validate assumptions with the layout before committing to code
