@@ -1343,7 +1343,7 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
     if (nc[itemId]) { ncomp[itemId] = { name: currentUser || "Someone" }; }
     else { delete ncomp[itemId]; }
     setChecks(nc); setCompletions(ncomp);
-    if (!running) setRunning(true);
+    if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
 
   const addTaskToSection = (sectionId) => {
@@ -1567,7 +1567,7 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
     if (nc[itemId]) { ncomp[itemId] = { name: currentUser }; }
     else { delete ncomp[itemId]; }
     setChecks(nc); setCompletions(ncomp);
-    if (!running) setRunning(true);
+    if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
   const hasTasks = data.some(s => s.items.some(i => isUnassigned ? !assignments[i.id] : assignments[i.id] === viewUser));
   return (
