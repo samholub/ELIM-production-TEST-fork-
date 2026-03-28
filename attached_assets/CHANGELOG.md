@@ -29,17 +29,41 @@ Zero-Principles audit identified 26 issues across data integrity, volunteer safe
 - **Photos removed from load gate** — `c5` (photos loaded flag) removed from `const loaded = ...` gate; app renders immediately, photos load lazily when available
 - **Hoisted static constants** — `cards` array moved from inside `DashboardView` to module scope; `CARD_BASE_STYLE` hoisted from inside `CheckItem` render to module scope
 
+**Bucket B — UX improvements (shipped same day):**
+- **Default My Tasks view** — app opens to My Tasks instead of Dashboard; Dashboard accessible via back button
+- **Search toggle** — checklist search bar hidden behind 🔍 icon; expands on tap, collapses when empty + blurred
+- **Placeholder cards removed from dashboard** — Equipment and Purchases cards moved to Settings → "Coming Soon" section; dashboard nav grid reduced from 3×2 to 2×2
+- **Last-setup stat removed from dashboard hero** — still accessible in Settings → Setup History
+
 **Storage keys added:** `elim3-pending-reset` (transient, deleted after reset completes)
 
-**UX improvements:**
-- **My Tasks is default view** — app opens to personal task list instead of dashboard; dashboard accessible via back arrow from My Tasks
-- **Checklist version stamp** — `CHECKLIST_VERSION` constant compared against stored `_version` field; when code has newer checklist structure, Sam sees amber "Checklist structure updated — tap to apply" banner; applying writes code constant to Firebase without clearing assignments/notes/photos
-- **Placeholder cards moved to Settings** — Equipment and Purchases cards removed from dashboard nav grid; shown as disabled rows in Settings below About section
-- **Dashboard nav grid reduced** — 3×2 → 2×2 (Power Sequence, I/O Line List, Signal Flow, Repairs)
-- **"Last setup" stat removed from dashboard** — `history[0]` display removed from timer zone; data still accessible in Settings → Setup History
-- **Search bar hidden behind toggle** — checklist search input replaced with 🔍 icon; tapping reveals search input; collapses when cleared and blurred
-
 **Version:** bumped to v5.7.0
+
+---
+
+## v5.8.0 (2026-03-28) — P0 Bug Fixes + Note Surfacing
+
+Five Priority 0 bugs resolved plus task card information density improvements.
+
+**Bug fixes:**
+- **Hidden scrollbar** — CSS rules added (`scrollbar-width: none` + `::-webkit-scrollbar { display: none }`) on wildcard selector; covers main page and inner scrollable containers
+- **Dante I/O edit overflow** — added `minWidth: 0` to from/to input fields and `flexShrink: 0` to delete button in Dante routing edit row; inputs now shrink properly on narrow screens
+- **Custom assignment dropdown** — replaced native `<select>` with `AssignDropdown` component; dark-themed dropdown list (`#1C1A18` background), 15px text, click-outside-to-close, "Unassign" option when assigned, checkmark on current selection; matches Warm Night theme
+- **Scroll position preservation** — `scrollPositions` ref stores `window.scrollY` per view on navigate/goBack; restored via `requestAnimationFrame` on view change; session-only (not persisted across refreshes)
+
+**Task card improvements:**
+- **Detail text surfaced above the fold** — `item.detail` now renders below assignee row (outside expand), capped at 2 lines with `-webkit-line-clamp`; hidden on checked tasks to save vertical space
+- **Note preview above the fold** — populated `taskNote` shows below detail with 📌 indicator, capped at 2 lines; hidden when task is expanded (full editing UI visible) or checked
+- **Detail removed from expand area** — no longer duplicated inside the expanded section
+
+**Navigation:**
+- **View stack** — `viewStack` array replaces simple `view` state; `navigate()` pushes or returns to existing position; `goBack()` pops; enables proper breadcrumb-style back navigation
+
+**Component changes:**
+- New `AssignDropdown` component (defined near `CheckItem`)
+- `CheckItem` render order restructured: checkbox → task name → assignee → detail → note preview → [expand: photos, troubleshooting, note editing]
+
+**Version:** bumped to v5.8.0
 
 ---
 

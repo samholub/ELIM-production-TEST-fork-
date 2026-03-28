@@ -13,23 +13,23 @@ Active bugs and visual issues that affect usability.
 ### ~~Dependency Warning Modal Unreadable~~ — FIXED in v5.7.0
 ~~The amber dependency warning overlay doesn't sufficiently obscure the text behind it. The background is `rgba(0,0,0,0.6)` which lets checklist text bleed through, making the warning text hard to read. Needs a more opaque backdrop or a solid card background.~~
 
-### Dante I/O Fields Overflow Screen Edge
-When editing Dante routing entries in the I/O Line List, the from/to input fields and protocol dropdown expand past the right edge of the screen. Needs `overflow` handling or layout adjustment on the edit row.
+### Dante I/O Fields Overflow Screen Edge — FIXED in v5.8.0
+~~When editing Dante routing entries in the I/O Line List, the from/to input fields and protocol dropdown expand past the right edge of the screen. Needs `overflow` handling or layout adjustment on the edit row.~~
 
-### Assignment Dropdown: White Background on Mobile
-The `<select>` dropdown opens with native OS white styling, which clashes with the dark Warm Night theme. Needs a custom dropdown component that matches the app's color system — dark background, cream text, properly sized tap targets.
+### ~~Assignment Dropdown: White Background on Mobile~~ — FIXED in v5.8.0
+~~The `<select>` dropdown opens with native OS white styling, which clashes with the dark Warm Night theme. Needs a custom dropdown component that matches the app's color system — dark background, cream text, properly sized tap targets.~~
 
-### Assignment Dropdown: Too Small to Read
-The dropdown is compact (14px, tight padding). When tapped, the native picker shows names but the in-task display is cramped. Should expand into a larger, more readable selector when activated — bigger text, more padding, clearer name display.
+### ~~Assignment Dropdown: Too Small to Read~~ — FIXED in v5.8.0
+~~The dropdown is compact (14px, tight padding). When tapped, the native picker shows names but the in-task display is cramped. Should expand into a larger, more readable selector when activated — bigger text, more padding, clearer name display.~~
 
-### Populated Notes Hidden in Expand
-When a task has a saved note, it's only visible after expanding the task (📌 icon is the only hint). Populated notes should surface above the fold — display under the assignee name in a compact, styled format matching the existing note aesthetic. The expand area retains the edit functionality.
+### ~~Populated Notes Hidden in Expand~~ — FIXED in v5.8.0
+~~When a task has a saved note, it's only visible after expanding the task (📌 icon is the only hint). Populated notes should surface above the fold — display under the assignee name in a compact, styled format matching the existing note aesthetic. The expand area retains the edit functionality.~~
 
-### Visible Scrollbar
-The right-side scrollbar is visible on the app. Should be hidden via CSS (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`).
+### ~~Visible Scrollbar~~ — FIXED in v5.8.0
+~~The right-side scrollbar is visible on the app. Should be hidden via CSS (`scrollbar-width: none` / `::-webkit-scrollbar { display: none }`).~~
 
-### Scroll Position Resets on Navigation
-When navigating from a screen (e.g., Checklist → task detail or Dashboard → My Tasks) and returning via back button or swipe, the scroll position resets to the top. Should preserve and restore scroll position for each view.
+### ~~Scroll Position Resets on Navigation~~ — FIXED in v5.8.0
+~~When navigating from a screen (e.g., Checklist → task detail or Dashboard → My Tasks) and returning via back button or swipe, the scroll position resets to the top. Should preserve and restore scroll position for each view.~~
 
 ---
 
@@ -37,18 +37,16 @@ When navigating from a screen (e.g., Checklist → task detail or Dashboard → 
 
 These are strategic decisions about how the app should feel and flow. Should be discussed before implementing.
 
-### ~~Navigation Model~~ — DONE in v5.7.0 (Option A selected)
-~~The dashboard is designed for a team-lead perspective (overall progress, crew status), but most users are individual crew members who just want their task list. The current flow is: Open → Dashboard → Tap "Your Tasks" → See tasks. That's one unnecessary hop.~~
+### ~~Navigation Model~~ — SHIPPED in v5.7.0
+~~Option A selected: My Tasks is now the default landing page. Dashboard accessible via back navigation.~~
 
-App now opens directly to My Tasks. Dashboard accessible via back arrow.
-
-### Reduce Visual Noise
-- ~~**Remove Equipment placeholder** — nav card leads to "Coming soon" screen. Dead weight.~~ DONE in v5.7.0 — moved to Settings
-- ~~**Remove Purchases placeholder** — same. Add both back when they're actually built.~~ DONE in v5.7.0 — moved to Settings
-- ~~**Nav grid:** 3×2 (6 cards, 2 dead) → 2×2 (4 working cards). Every card does something.~~ DONE in v5.7.0
-- ~~**Hide checklist search bar** behind a search icon toggle — 59 tasks across 15 sections is scrollable in 3 seconds. Search bar always occupies space for a problem that barely exists.~~ DONE in v5.7.0
-- **Move checklist edit mode to Settings** (or behind long-press) — admin function that 15 of 16 team members will never use. Same for I/O edit and Repairs edit. *(Partially addressed: edit mode now restricted to Sam via `currentUser === "Sam"` check)*
-- ~~**Remove "Last setup" stat from dashboard hero** — interesting for post-mortem, not during setup. Already lives in Settings → Setup History.~~ DONE in v5.7.0
+### ~~Reduce Visual Noise~~ — SHIPPED in v5.7.0 / v5.8.0
+~~All items completed:~~
+- ~~Placeholder cards (Equipment, Purchases) moved to Settings → "Coming Soon"~~
+- ~~Nav grid reduced from 3×2 to 2×2~~
+- ~~Search bar hidden behind 🔍 toggle~~
+- ~~Edit mode restricted to Sam (via `currentUser === "Sam"` check)~~
+- ~~"Last setup" stat removed from dashboard hero~~
 
 ### Task Card Density
 - Show assignee as plain text (not dropdown) by default — during setup, assignments are already set
@@ -98,7 +96,7 @@ These should be added to the `DEFAULT_REPAIRS` constant in code. Can also be add
 ## Priority 4: Code Quality / Simplification
 
 ### Remove dead weight:
-- ~~Delete `PlaceholderView` component and both placeholder nav entries (Equipment, Purchases)~~ Partially done in v5.7.0 — placeholder cards moved from dashboard to Settings; `PlaceholderView` component can still be deleted once Settings rows replace it
+- Delete `PlaceholderView` component and both placeholder nav entries (Equipment, Purchases)
 - Remove placeholder routes from main app component
 
 ### Reduce duplication:
@@ -116,10 +114,10 @@ These should be added to the `DEFAULT_REPAIRS` constant in code. Can also be add
 The Signal Flow diagrams are currently ~200 lines of hardcoded SVG. The I/O Line List already contains the routing information (inputs, outputs, Dante paths). The SVGs could be generated dynamically from that data, so editing the I/O list automatically updates the signal flow diagrams. This would eliminate the need to maintain two sources of truth for the same routing information. Significant architectural change — evaluate complexity vs benefit.
 
 ### Equipment Inventory View
-Full equipment inventory with serial numbers, condition tracking, who-has-what. Currently a placeholder row in Settings.
+Full equipment inventory with serial numbers, condition tracking, who-has-what. Currently a placeholder card on dashboard.
 
 ### Purchases View
-Want/need purchase tracking list. Currently a placeholder row in Settings.
+Want/need purchase tracking list. Currently a placeholder card on dashboard.
 
 ### Teardown Checklist
 Reverse of setup with teardown-specific tasks. Power sequence already has teardown guidance but no checklist.

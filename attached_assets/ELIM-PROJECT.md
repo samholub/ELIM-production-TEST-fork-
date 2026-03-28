@@ -4,18 +4,21 @@ Portable church production setup/teardown checklist app for ELIM Church (The Wel
 
 ---
 
-## Current Status: v5.7.0
+## Current Status: v5.8.0
 
 **Live URL:** https://elim-production.web.app
+**Test URL:** Replit preview (connected to production Firebase)
+**Test repo:** https://github.com/samholub/ELIM-production-TEST-fork-
 
 ### What's Built
 - **15 sections, 59 tasks** covering full setup flow from Pre-Setup through Post-Event
 - **Photo documentation** — camera capture or upload per task, auto-resized, persistent
 - **Troubleshooting guides** — expandable Q&A per task for common issues
-- **Per-task notes** — persistent, shared across team
-- **Task assignments** — per-task dropdown, any team member
+- **Per-task notes** — persistent, shared across team; preview shown above the fold (hidden on checked tasks)
+- **Task detail surfacing** — static reference text shown below assignee without expanding (hidden on checked tasks)
+- **Custom assignment dropdown** — dark-themed dropdown replacing native select; click-outside-to-close, unassign option
 - **Countdown timer** — configurable (30/45/60/90 presets or custom) with green→yellow→red transition, auto-pause at zero, syncs across devices
-- **Weekly reset** — clears checkboxes/timer, preserves assignments/notes/photos; saves history (last 52 weeks)
+- **Weekly reset** — clears checkboxes/timer, preserves assignments/notes/photos; saves history (last 52 weeks); atomic with pending-reset flag
 - **SVG brand mark** — geometric `ElimLogo` component (right-pointing chevrons + block E)
 - **Signal Flow diagrams** — three static SVG diagrams (Audio, Video, Network/Dante) with color-coded sections
 - **Crew focused views** — tap a crew member name on dashboard → focused task list
@@ -27,7 +30,10 @@ Portable church production setup/teardown checklist app for ELIM Church (The Wel
 - **Power sequence** — 10-step equipment power order with teardown reminder; badges on task cards
 - **Editable I/O Line List** — edit channel labels, types, notes; add/remove channels; reset to defaults
 - **Repairs tracker** — Firebase-persisted with full CRUD, search, priority levels
-- **Checklist task editing** — search toolbar, edit mode with add/remove/edit tasks inline
+- **Checklist task editing** — search toggle (🔍 icon), edit mode (Sam only) with add/remove/edit tasks inline
+- **View stack navigation** — proper breadcrumb-style back navigation with scroll position preservation
+- **Default My Tasks view** — app opens to My Tasks; dashboard accessible via back navigation
+- **Error boundary** — render crashes show "Tap to Reload" instead of permanent white screen
 - **Dependency warnings** — prerequisite tasks must be complete (amber modal, user can always proceed)
 - **Dynamic roster** — add/remove/reorder team members in Settings
 - **Remember-me** — device remembers last selected user
@@ -39,8 +45,6 @@ Portable church production setup/teardown checklist app for ELIM Church (The Wel
 - **Task deletion confirmation** — `confirm()` dialog before removing any task
 - **Atomic weekly reset** — pending-reset flag prevents partial state on interruption
 - **Orphan cleanup** — task deletion and roster removal clean up all supporting data keys
-- **Checklist version stamp** — `CHECKLIST_VERSION` constant enables detection of code-vs-Firebase structure mismatch; Sam sees update banner when code has newer checklist
-- **Search toggle** — checklist search bar hidden behind 🔍 icon to reduce visual noise
 
 ---
 
@@ -154,24 +158,17 @@ elim-production/                  ← C:\Users\sammh\elim-production\
 
 ---
 
-## Default View: My Tasks
-- App opens directly to the user's personal task list (My Tasks) instead of the dashboard
-- Back arrow on My Tasks navigates to dashboard
-- Dashboard is fully functional as a secondary view
-
 ## Dashboard Layout
 - **Header:** Logo (left) · Centered username with ▾ tap-to-switch · ⚙️ gear (right)
 - **Hero:** Stacked progress zone (tappable → full checklist) + timer zone (with picker)
 - **Your Tasks:** Card linking to My Tasks with remaining count
 - **Crew Status:** Per-person progress rows, you sorted first, "Unassigned tasks" row at bottom
-- **Nav Cards:** 2×2 grid — Power Sequence, I/O Line List, Signal Flow, Repairs
+- **Nav Cards:** 3×2 grid — Power Sequence, I/O Line List, Signal Flow, Equipment, Repairs, Purchases
 
 ## Settings Layout
 - **Reset Checklist** (top) — two-tap confirmation
 - **Team Roster** — add/remove members with color assignment
 - **Setup History** — last 52 sessions with date, progress bar, percentage, time
-- **Equipment** — placeholder (coming soon)
-- **Purchases** — placeholder (coming soon)
 - **About** — app version and description
 
 ---

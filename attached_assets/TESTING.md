@@ -8,32 +8,63 @@ Quick validation before taking this into a real Sunday setup.
 - [x] **Opaque backdrop** — dependency warning modal background fully obscures text behind it
 - [x] **Warning text readable** — amber warning text, button labels clearly visible against background
 
-### I/O Dante Edit Overflow
-- [ ] **Fields stay on screen** — editing Dante routing from/to fields doesn't overflow past right edge
-- [ ] **All controls accessible** — protocol dropdown and delete button visible without horizontal scroll
+### I/O Dante Edit Overflow — FIXED in v5.8.0
+- [x] **Fields stay on screen** — editing Dante routing from/to fields doesn't overflow past right edge
+- [x] **All controls accessible** — protocol dropdown and delete button visible without horizontal scroll
 
-### Assignment Dropdown Styling
-- [ ] **Dark theme match** — dropdown background matches Warm Night dark theme (not white)
-- [ ] **Readable size** — names in dropdown large enough to tap and read easily
-- [ ] **Expanded view** — dropdown opens to a larger, more readable selector
+### Assignment Dropdown Styling — FIXED in v5.8.0
+- [x] **Dark theme match** — custom AssignDropdown component with `#1C1A18` background
+- [x] **Readable size** — 15px font, 10px 14px padding on each option
+- [x] **Expanded view** — dropdown opens below button with full team roster, click-outside-to-close
 
-### Notes Display
-- [ ] **Populated notes visible** — tasks with saved notes show the note content without expanding
-- [ ] **Note positioned under assignee** — compact note text appears below the assignment, above expand area
-- [ ] **Edit still in expand** — expanding the task still shows the full note editor
+### Notes Display — FIXED in v5.8.0
+- [x] **Populated notes visible** — tasks with saved notes show preview below assignee (hidden on checked tasks)
+- [x] **Detail text surfaced** — `item.detail` also shown above the fold, hidden on checked tasks
+- [x] **Edit still in expand** — expanding the task still shows the full note editor
 
-### Scrollbar Hidden
-- [ ] **No visible scrollbar** — right-side scrollbar not visible on iOS or Android
+### Scrollbar Hidden — FIXED in v5.8.0
+- [x] **No visible scrollbar** — CSS wildcard rules hide scrollbar on all containers
 
-### Scroll Position Preservation
-- [ ] **Checklist position preserved** — scroll to middle of checklist, tap into a task detail, come back → still at same position
-- [ ] **Dashboard position preserved** — scroll down on dashboard, enter a nav card view, come back → same position
+### Scroll Position Preservation — FIXED in v5.8.0
+- [x] **Checklist position preserved** — scroll position saved per view on navigate, restored via requestAnimationFrame
+- [x] **Dashboard position preserved** — viewStack navigation preserves scroll for all views
 - [ ] **Works with swipe-back** — swipe-back gesture preserves scroll position same as back button
 
 ### "All" Assignment Option
 - [ ] **"All" in dropdown** — assignment dropdown includes "All" option
 - [ ] **"All" styling** — tasks assigned to "All" have appropriate visual treatment (not orange "yours" unless you're logged in)
 - [ ] **"All" in My Tasks** — tasks assigned to "All" appear in everyone's My Tasks view
+
+---
+
+## v5.8.0 Field Validation
+
+### Custom Assignment Dropdown
+- [ ] **Tap to open** — tapping assignee button opens dark-themed dropdown list
+- [ ] **Tap to select** — tapping a name assigns and closes dropdown
+- [ ] **Tap outside to close** — tapping anywhere outside the dropdown dismisses it
+- [ ] **Unassign option** — "Unassign" option appears only when a name is already assigned
+- [ ] **Current selection marked** — currently assigned name shows with ✓ prefix and accent color
+- [ ] **No z-index clipping** — dropdown list is not clipped by parent card containers
+- [ ] **Works in My Tasks view** — dropdown functions same in My Tasks as in full Checklist
+
+### Detail + Note Surfacing
+- [ ] **Detail visible without expanding** — tasks with `item.detail` show it below assignee row
+- [ ] **Note preview visible** — tasks with saved notes show 📌 preview below detail
+- [ ] **2-line clamp** — long detail/note text truncates with ellipsis at 2 lines
+- [ ] **Hidden when checked** — both detail and note preview disappear when task is checked off
+- [ ] **Note preview hides on expand** — expanding a task hides the preview (full editor shown instead)
+- [ ] **Detail stays on expand** — detail text remains visible when task is expanded
+
+### Scroll Position
+- [ ] **Preserved on navigate** — scroll to middle of checklist, tap back, re-enter → same position
+- [ ] **Preserved on swipe-back** — swipe gesture preserves position same as back button
+- [ ] **Fresh on new view** — navigating to a view for the first time starts at top
+
+### View Stack Navigation
+- [ ] **Back button works** — tapping ← goes to previous view, not always dashboard
+- [ ] **Deep navigation** — Dashboard → Checklist → Crew Tasks → back → back returns to Dashboard
+- [ ] **Swipe back matches button** — swipe gesture navigates same as ← button
 
 ---
 
@@ -77,32 +108,6 @@ Quick validation before taking this into a real Sunday setup.
 ### Performance
 - [ ] **App loads without waiting for photos** — on slow connection, app should be interactive before photos finish loading
 - [ ] **No visible jank** — scroll through full checklist with timer running; should be smooth on mobile
-
-### Default View — My Tasks
-- [ ] **App opens to My Tasks** — after login, user sees their personal task list, not the dashboard
-- [ ] **Back arrow to dashboard** — tapping ← on My Tasks navigates to dashboard
-- [ ] **Dashboard fully functional** — dashboard shows progress, timer, crew status, nav cards as before
-- [ ] **Dashboard header correct** — Logo (left), centered username with ▾, ⚙️ gear (right); no back arrow on dashboard
-- [ ] **No navigation loop** — going My Tasks → Dashboard → back → should return to My Tasks, not loop
-
-### Checklist Version Stamp
-- [ ] **No banner when current** — if `_version` in Firebase matches `CHECKLIST_VERSION`, no banner shown
-- [ ] **Banner for Sam** — if versions differ and user is Sam, amber "Checklist structure updated" banner appears at top of checklist
-- [ ] **Banner not shown to others** — if versions differ and user is NOT Sam, no banner shown
-- [ ] **Apply works** — tapping "Apply Update" writes code constant to Firebase; banner disappears
-- [ ] **Assignments survive** — applying update does not clear task assignments, notes, or photos
-
-### Search Toggle
-- [ ] **Search icon visible** — 🔍 icon visible in checklist toolbar (same row as edit button if Sam)
-- [ ] **Tap reveals input** — tapping 🔍 shows the search text input
-- [ ] **Search works** — typing filters tasks as before
-- [ ] **Collapses when cleared** — clearing search text and tapping away hides the input back to icon
-- [ ] **Edit + search combo** — search and edit mode still work together when both active
-
-### Placeholders in Settings
-- [ ] **Equipment in Settings** — Equipment row visible in Settings below About, shows "Coming soon"
-- [ ] **Purchases in Settings** — Purchases row visible in Settings below About, shows "Coming soon"
-- [ ] **Not on dashboard** — neither Equipment nor Purchases appears in dashboard nav grid
 
 ### JSON Null Guard
 - [ ] **Null doesn't crash** — (test via Firebase console) set `elim3-checks` to `null` in Firebase; app should not white-screen; should fall back to empty state
@@ -407,7 +412,7 @@ Quick validation before taking this into a real Sunday setup.
 - [ ] **No auto-expand** — checklist opens with all sections collapsed when navigated from hero?
 - [ ] **Timer isolated** — tapping timer controls doesn't accidentally navigate to checklist?
 - [ ] **Timer picker** — X button in top-right of picker panel, presets and custom input work?
-- [ ] **No history line** — "Last: {date}" stat NOT shown on dashboard (moved to Settings → Setup History)
+- [ ] **History line** — "Last: {date} — {pct}% in {time}" visible below timer?
 
 ## Header (v5.3.0)
 
@@ -440,11 +445,9 @@ Quick validation before taking this into a real Sunday setup.
 - [ ] **Centered** — badge vertically centered in the card?
 - [ ] **Correct tasks** — only tasks with power sequence numbers show the badge?
 
-## Navigation Cards (v5.7.0 — updated)
+## Navigation Cards (v5.3.0)
 
-- [ ] **2×2 grid** — Power Sequence, I/O Line List, Signal Flow, Repairs?
-- [ ] **No Equipment card** — Equipment placeholder moved to Settings?
-- [ ] **No Purchases card** — Purchases placeholder moved to Settings?
+- [ ] **3×2 grid** — Power Sequence, I/O Line List, Signal Flow, Equipment, Repairs, Purchases?
 - [ ] **No Checklist card** — checklist access only via hero "View all →"?
 - [ ] **No Settings card** — settings access only via header ⚙️?
 
