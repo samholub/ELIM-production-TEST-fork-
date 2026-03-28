@@ -548,9 +548,7 @@ const DASHBOARD_CARDS = [
   { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
   { id: "io-list", icon: "🎚️", title: "I/O Line List", subtitle: "Inputs & routing" },
   { id: "network", icon: "🌐", title: "Signal Flow", subtitle: "Network diagram" },
-  { id: "inventory", icon: "📦", title: "Equipment", subtitle: "Inventory & status" },
   { id: "repairs", icon: "🔧", title: "Repairs", subtitle: "Pending maintenance" },
-  { id: "purchases", icon: "🛒", title: "Purchases", subtitle: "Want / need list" },
 ];
 
 const ALL_ITEMS = CHECKLIST_DATA.flatMap(s => s.items.map(i => ({ ...i, section: s })));
@@ -1121,6 +1119,26 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
         </div>
         <div style={{ fontSize: 12, color: S.textMuted, lineHeight: 1.5 }}>Setup checklist for ELIM Church production team. Data syncs across all devices in real time.</div>
       </div>
+
+      {/* Coming Soon */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 24, marginBottom: 8 }}>Coming Soon</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {[
+          { icon: "📦", title: "Equipment", subtitle: "Inventory & status" },
+          { icon: "🛒", title: "Purchases", subtitle: "Want / need list" },
+        ].map(item => (
+          <div key={item.title} style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+            background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, opacity: 0.5
+          }}>
+            <span style={{ fontSize: 20 }}>{item.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{item.title}</div>
+              <div style={{ fontSize: 12, color: S.textMuted }}>Coming soon</div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1228,12 +1246,6 @@ function DashboardView({ onNavigate, checks, totalItems, assignments, currentUse
             </div>
           )}
 
-          {/* History stat line */}
-          {history && history.length > 0 && (
-            <div style={{ marginTop: 10, fontSize: 12, color: S.textMuted }}>
-              Last: {history[0].date} — {history[0].pct}% in {formatTime(history[0].elapsed)}
-            </div>
-          )}
         </div>
       </div>
 
@@ -1304,8 +1316,8 @@ function DashboardView({ onNavigate, checks, totalItems, assignments, currentUse
         );
       })()}
 
-      {/* Nav cards — 3×2 grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+      {/* Nav cards — 2×2 grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {cards.map(card => (
           <div key={card.id} onClick={() => onNavigate(card.id)} style={{
             background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 12,
@@ -1329,6 +1341,8 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   const [filterUser, setFilterUser] = useState(initialFilter || "all");
   const [searchText, setSearchText] = useState("");
   const [editMode, setEditMode] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
   const [addingTaskInSection, setAddingTaskInSection] = useState(null);
   const [newTaskText, setNewTaskText] = useState("");
   const [editingTaskId, setEditingTaskId] = useState(null);
@@ -1411,27 +1425,38 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
 
       {/* Search + edit mode toolbar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center" }}>
-        <div style={{ flex: 1, position: "relative" }}>
-          <input
-            type="text"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            placeholder="Search tasks..."
-            style={{
-              width: "100%", padding: "8px 32px 8px 12px", borderRadius: 8, fontSize: 14,
-              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
-              color: S.text, fontFamily: S.sans, outline: "none", boxSizing: "border-box"
-            }}
-          />
-          {searchText && (
-            <button onClick={() => setSearchText("")} style={{
-              position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
-              background: "rgba(255,220,180,0.1)", border: "none", borderRadius: 10,
-              width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
-              color: S.textMuted, fontSize: 12, cursor: "pointer", padding: 0
-            }}>✕</button>
-          )}
-        </div>
+        {searchOpen ? (
+          <div style={{ flex: 1, position: "relative" }}>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              onBlur={() => { if (!searchText) setSearchOpen(false); }}
+              placeholder="Search tasks..."
+              style={{
+                width: "100%", padding: "8px 32px 8px 12px", borderRadius: 8, fontSize: 14,
+                background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+                color: S.text, fontFamily: S.sans, outline: "none", boxSizing: "border-box"
+              }}
+            />
+            {searchText && (
+              <button onClick={() => { setSearchText(""); searchInputRef.current && searchInputRef.current.focus(); }} style={{
+                position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                background: "rgba(255,220,180,0.1)", border: "none", borderRadius: 10,
+                width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+                color: S.textMuted, fontSize: 12, cursor: "pointer", padding: 0
+              }}>✕</button>
+            )}
+          </div>
+        ) : (
+          <div style={{ flex: 1 }}>
+            <button onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current && searchInputRef.current.focus(), 0); }} style={{
+              padding: "8px 12px", borderRadius: 8, fontSize: 15, cursor: "pointer", fontFamily: S.sans,
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
+            }}>🔍</button>
+          </div>
+        )}
         {setChecklistData && currentUser === "Sam" && (
           <button onClick={() => { setEditMode(!editMode); setAddingTaskInSection(null); setEditingTaskId(null); }} style={{
             padding: "8px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: S.sans,
