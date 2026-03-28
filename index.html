@@ -2503,7 +2503,7 @@ function ElimProductionApp() {
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
       <Header currentUser={currentUser} title={titles[view] || "ELIM Production"}
         subtitle={null}
-        onBack={viewStack.length > 1 ? goBack : null}
+        onBack={viewStack.length > 1 ? goBack : (view === "my-tasks" ? () => navigate("dashboard") : null)}
         onSwitchUser={view === "dashboard" ? () => selectUser("") : null}
         onSettings={view === "dashboard" ? () => navigate("settings") : null}
         rightContent={(view === "checklist" || view === "my-tasks" || view === "crew-tasks") ? (
