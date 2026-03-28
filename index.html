@@ -978,7 +978,7 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
             <AssignDropdown assignee={assignee} onAssign={onAssign} isMine={isMine} teamMembers={teamMembers} />
           </div>
-          {item.detail && (
+          {item.detail && !checked && (
             <div style={{
               marginTop: 6, padding: "5px 10px",
               background: "rgba(255,235,210,0.03)",
@@ -990,7 +990,7 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
               {item.detail}
             </div>
           )}
-          {taskNote && !expanded && (
+          {taskNote && !expanded && !checked && (
             <div style={{
               marginTop: 4, padding: "5px 10px",
               background: "rgba(255,200,100,0.04)",
