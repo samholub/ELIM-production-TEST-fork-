@@ -198,7 +198,7 @@
   <!-- App source — loaded as separate file for easy updates -->
   <script type="text/babel" data-type="module">
     // Shim for named imports from React (Babel standalone doesn't handle import { x } from "react")
-    const { useState, useEffect, useCallback, useRef } = React;
+    const { useState, useEffect, useCallback, useRef, useMemo } = React;
 
     // ═══════════════════════════════════════════
     // APP CODE (inlined from elim-v5.jsx)
@@ -225,6 +225,8 @@ const S = {
   checkboxEmpty: "rgba(255,220,180,0.15)",
   mono: "'JetBrains Mono', monospace", sans: "'DM Sans', system-ui, sans-serif",
 };
+
+const CARD_BASE_STYLE = { borderRadius: 10, padding: "11px 12px", transition: "all 0.2s ease" };
 
 // ═══════════════════════════════════════════
 // DATA
@@ -538,6 +540,15 @@ const POWER_SEQUENCE = [
   { order: 8, equipment: "Streaming Camera" },
   { order: 9, equipment: "LED Transmitter" },
   { order: 10, equipment: "Speakers" },
+];
+
+const DASHBOARD_CARDS = [
+  { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
+  { id: "io-list", icon: "🎚️", title: "I/O Line List", subtitle: "Inputs & routing" },
+  { id: "network", icon: "🌐", title: "Signal Flow", subtitle: "Network diagram" },
+  { id: "inventory", icon: "📦", title: "Equipment", subtitle: "Inventory & status" },
+  { id: "repairs", icon: "🔧", title: "Repairs", subtitle: "Pending maintenance" },
+  { id: "purchases", icon: "🛒", title: "Purchases", subtitle: "Want / need list" },
 ];
 
 const ALL_ITEMS = CHECKLIST_DATA.flatMap(s => s.items.map(i => ({ ...i, section: s })));
@@ -854,7 +865,7 @@ function TroubleshootingSection({ items }) {
 // ═══════════════════════════════════════════
 // CHECK ITEM
 // ═══════════════════════════════════════════
-function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUpdateNote, photos, setPhotos, isMine, currentUser, teamMembers, isLast, allChecks }) {
+const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUpdateNote, photos, setPhotos, isMine, currentUser, teamMembers, isLast, allChecks }) {
   const [expanded, setExpanded] = useState(false);
   const [editingNote, setEditingNote] = useState(false);
   const [noteText, setNoteText] = useState(taskNote || "");
@@ -878,11 +889,10 @@ function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUp
   const isUnassigned = !assignee && !checked;
 
   const cardStyle = (() => {
-    const base = { borderRadius: 10, padding: "11px 12px", transition: "all 0.2s ease" };
-    if (checked) return { ...base, background: S.successSoft, border: `1px solid ${S.successBorder}` };
-    if (isUnassigned) return { ...base, background: "rgba(255,235,210,0.02)", border: "1.5px dashed rgba(255,220,180,0.18)", padding: "11px 14px" };
-    if (isMine) return { ...base, background: S.mine, border: `1px solid ${S.mineBorder}`, borderLeft: `3px solid ${S.accent}` };
-    return { ...base, background: S.card, border: `1px solid ${S.cardBorder}` };
+    if (checked) return { ...CARD_BASE_STYLE, background: S.successSoft, border: `1px solid ${S.successBorder}` };
+    if (isUnassigned) return { ...CARD_BASE_STYLE, background: "rgba(255,235,210,0.02)", border: "1.5px dashed rgba(255,220,180,0.18)", padding: "11px 14px" };
+    if (isMine) return { ...CARD_BASE_STYLE, background: S.mine, border: `1px solid ${S.mineBorder}`, borderLeft: `3px solid ${S.accent}` };
+    return { ...CARD_BASE_STYLE, background: S.card, border: `1px solid ${S.cardBorder}` };
   })();
 
   return (
@@ -966,7 +976,7 @@ function CheckItem({ item, checked, onToggle, assignee, onAssign, taskNote, onUp
       )}
     </div>
   );
-}
+});
 // ═══════════════════════════════════════════
 function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments }) {
   const [newName, setNewName] = useState("");
@@ -1141,14 +1151,7 @@ function DashboardView({ onNavigate, checks, totalItems, assignments, currentUse
     return b[1].total - a[1].total;
   });
 
-  const cards = [
-    { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
-    { id: "io-list", icon: "🎚️", title: "I/O Line List", subtitle: "Inputs & routing" },
-    { id: "network", icon: "🌐", title: "Signal Flow", subtitle: "Network diagram" },
-    { id: "inventory", icon: "📦", title: "Equipment", subtitle: "Inventory & status" },
-    { id: "repairs", icon: "🔧", title: "Repairs", subtitle: "Pending maintenance" },
-    { id: "purchases", icon: "🛒", title: "Purchases", subtitle: "Want / need list" },
-  ];
+  const cards = DASHBOARD_CARDS;
 
   return (
     <div style={{ padding: "16px" }}>
@@ -2410,8 +2413,11 @@ function ElimProductionApp() {
   useBackSwipe(view !== "dashboard" ? goBack : null, contentRef);
 
   const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
-  const allItems = checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s })));
-  const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9;
+  const allItems = useMemo(
+    () => checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s }))),
+    [checklistData]
+  );
+  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
 
   const titles = {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",

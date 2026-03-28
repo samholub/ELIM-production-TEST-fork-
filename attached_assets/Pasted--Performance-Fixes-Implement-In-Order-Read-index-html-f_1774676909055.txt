@@ -1,0 +1,84 @@
+# Performance Fixes — Implement In Order
+
+Read `index.html` fully before making any changes. These are surgical performance fixes. Do not refactor, restructure, or change any functionality. One fix at a time. Show me the result after each.
+
+## Fix 1: Hoist the `cards` array out of `DashboardView`
+
+The `cards` array in `DashboardView` is a static constant recreated every render. Move it to module scope (place it right below `POWER_SEQUENCE`). It never changes — there is zero reason for it to be inside the component.
+
+## Fix 2: Memoize `allItems` in `ElimProductionApp`
+
+In `ElimProductionApp`, this line runs on every render (including every 1-second timer tick):
+
+```javascript
+const allItems = checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s })));
+```
+
+Wrap it in `useMemo`:
+
+```javascript
+const allItems = useMemo(
+  () => checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s }))),
+  [checklistData]
+);
+```
+
+`useMemo` is already destructured from React at the top of the script. If it isn't, add it to the destructuring line.
+
+## Fix 3: Remove photos from the initial load gate
+
+In `ElimProductionApp`, the loaded gate currently requires all 9 storage keys to resolve before the app renders:
+
+```javascript
+const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9;
+```
+
+`c5` is the photos loaded flag. Remove it from the gate:
+
+```javascript
+const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
+```
+
+Photos will still load — they just won't block the app from rendering. When they arrive a moment later, the state update will cause `PhotoSlot` components to show them. The app becomes interactive immediately instead of waiting for potentially large photo data.
+
+## Fix 4: Memoize `CheckItem` with `React.memo`
+
+Wrap the `CheckItem` function component with `React.memo` to prevent re-renders when its props haven't changed. The timer ticks cause the parent to re-render every second, but individual task cards don't need to update unless their specific props change.
+
+Change the function declaration from:
+```javascript
+function CheckItem({ item, checked, onToggle, ... }) {
+```
+
+To:
+```javascript
+const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, ... }) {
+  // ... entire existing function body unchanged ...
+});
+```
+
+Keep the full existing props list and function body exactly as they are. Just wrap it.
+
+**Important:** This only works if the parent isn't passing new object/function references on every render. The `onToggle`, `onAssign`, and `onUpdateNote` callbacks in `ChecklistView` and `MyTasksView` are defined inline — that's fine for now, React.memo will still help because the timer tick re-renders come from `ElimProductionApp`, not from within `ChecklistView`. The memo boundary prevents the cascade.
+
+## Fix 5: Hoist stable style objects to module scope
+
+Find the `cardStyle` function (or IIFE) that computes card styles inside `CheckItem`. The BASE style object it starts from is static:
+
+```javascript
+const base = { borderRadius: 10, padding: "11px 12px", transition: "all 0.2s ease" };
+```
+
+If this line is inside `CheckItem` or inside `cardStyle`, move it to module scope — place it near the `S` theme object. Name it `CARD_BASE_STYLE`. Reference it inside the function instead of recreating it.
+
+Do the same for any other style objects that are purely static constants being created inside render functions. Do NOT move style objects that depend on props or state — those must stay inside the component.
+
+---
+
+## Rules
+- One fix at a time
+- Do not change any functionality
+- Do not rename variables beyond what's specified
+- Do not reorganize imports or component order
+- Show me the preview after each fix
+- If `useMemo` is not already in the React destructuring at the top, add it
