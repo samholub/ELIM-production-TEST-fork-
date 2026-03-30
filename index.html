@@ -1727,6 +1727,7 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
     setChecks(nc); setCompletions(ncomp);
     if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
+  const [manualExpand, setManualExpand] = useState({});
   const hasTasks = data.some(s => s.items.some(i => isUnassigned ? !assignments[i.id] : assignments[i.id] === viewUser));
   return (
     <div style={{ padding: "8px 16px 100px" }}>
@@ -1735,12 +1736,17 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
         if (my.length === 0) return null;
         const done = my.filter(i => checks[i.id]).length;
         const allDone = done === my.length;
+        const defaultExpanded = !allDone;
+        const isExpanded = manualExpand[section.id] !== undefined ? manualExpand[section.id] : defaultExpanded;
+        const toggleExpand = () => setManualExpand(prev => ({ ...prev, [section.id]: !isExpanded }));
         return (
-          <div key={section.id} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: S.textMuted, padding: "8px 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
-              <span>{section.icon} {data.findIndex(s => s.id === section.id) + 1}. {section.title}</span>
+          <div key={section.id} style={{ marginBottom: isExpanded ? 14 : 4 }}>
+            <div onClick={toggleExpand} style={{ fontSize: 13, fontWeight: 600, color: S.textMuted, padding: "8px 0 6px", display: "flex", alignItems: "center", gap: 6, cursor: "pointer", userSelect: "none" }}>
+              <span style={{ flex: 1, opacity: allDone ? 0.7 : 1, color: allDone ? S.success : S.textMuted }}>{section.icon} {data.findIndex(s => s.id === section.id) + 1}. {section.title}</span>
               <span style={{ fontFamily: S.mono, fontSize: 12, color: allDone ? S.success : S.textMuted }}>{allDone ? "✓" : `${done}/${my.length}`}</span>
+              <span style={{ fontSize: 10, color: S.textDim, marginLeft: 2 }}>{isExpanded ? "▼" : "▶"}</span>
             </div>
+            {isExpanded && (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {my.map((item, idx) => (
                 <CheckItem key={item.id} item={item} checked={!!checks[item.id]}
@@ -1752,6 +1758,7 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
                   teamMembers={teamMembers} isLast={idx === my.length - 1} allChecks={checks} />
               ))}
             </div>
+            )}
           </div>
         );
       })}
