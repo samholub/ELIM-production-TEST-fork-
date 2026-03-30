@@ -451,7 +451,7 @@ const CHECKLIST_DATA = [
       { id: "dn-5", task: "Connect 5-Port Switch to Omar/Mitch's ProTools Mac (CAT6 to USB-C adapter)",
         photos: [{ slot: "dn5-switch-mac", label: "CAT6 to USB-C adapter" }],
       },
-      { id: "dn-6", task: "Connect 5-Port Switch to Glenn's ProPresenter Mac while powered off",
+      { id: "dn-6", task: "Connect 5-Port Switch to ProPresenter Mac while powered off",
         photos: [{ slot: "dn6-switch-pp", label: "Connection to ProPresenter Mac" }],
       },
     ]
@@ -479,7 +479,7 @@ const CHECKLIST_DATA = [
           { q: "Wall showing wrong resolution?", a: "Check ProPresenter output settings. Full screen 5×8 = 832px, scale off. Split screen = 416px, scale on." }
         ]
       },
-      { id: "ds-2", task: "Plug Confidence Monitor into Glenn's ProPresenter Mac (USB-C Adapter)",
+      { id: "ds-2", task: "Plug Confidence Monitor into ProPresenter Mac (USB-C Adapter)",
         photos: [{ slot: "ds2-confidence", label: "Confidence monitor connection" }],
       },
       { id: "ds-3", task: "Power on Confidence Monitor", powerSeq: 6 },
@@ -491,7 +491,7 @@ const CHECKLIST_DATA = [
       { id: "cs-1b", task: "Setup ATEM Television Studio Pro 4K",
         detail: "Setup Resi Encoder alongside ATEM — connect ATEM Control Ethernet to Resi Encoder LAN 1.",
       },
-      { id: "cs-2", task: "Plug ATEM USB cable into Glenn's ProPresenter Mac",
+      { id: "cs-2", task: "Plug ATEM USB cable into ProPresenter Mac",
         photos: [{ slot: "cs2-atem-usb", label: "ATEM USB to Mac" }],
       },
       { id: "cs-1", task: "Camera 1: Power on BlackMagic wide-angle and run SDI to ATEM IN 1",
@@ -510,7 +510,7 @@ const CHECKLIST_DATA = [
   {
     id: "propresenter-mac", title: "ProPresenter Mac Setup", icon: "💻", color: "#6366F1",
     items: [
-      { id: "pp-1", task: "Power on Glenn's ProPresenter Mac", powerSeq: 7 },
+      { id: "pp-1", task: "Power on ProPresenter Mac", powerSeq: 7 },
       { id: "pp-2", task: "Check Dante Network",
         troubleshooting: [
           { q: "No Dante on ProPresenter Mac?", a: "Same fix as ProTools Mac — reboot. Check CAT6 from switch." }
@@ -602,7 +602,7 @@ const POWER_SEQUENCE = [
   { order: 4, equipment: "Dante Switch / Dante AVIO" },
   { order: 5, equipment: "ProTools Macs (Tyler + Omar/Mitch)" },
   { order: 6, equipment: "Confidence Monitor" },
-  { order: 7, equipment: "Glenn's ProPresenter Mac" },
+  { order: 7, equipment: "ProPresenter Mac" },
   { order: 8, equipment: "Streaming Camera" },
   { order: 9, equipment: "LED Transmitter" },
   { order: 10, equipment: "Speakers" },
@@ -2290,7 +2290,7 @@ function SignalFlowView() {
 
           <Arrow x1={400} y1={156} x2={400} y2={190}/>
           <Label x={410} y={180} text="CAT6"/>
-          <Box x={320} y={190} w={155} h={50} label="Glenn's Mac" sub="(ProPresenter)"/>
+          <Box x={320} y={190} w={155} h={50} label="ProPresenter Mac" sub=""/>
 
           <text x={240} y={358} fill="#7A6E60" fontSize="9" textAnchor="middle" fontFamily="'JetBrains Mono', monospace">Tyler's Mac: USB-C direct to Wing (not on Dante)</text>
         </svg>
