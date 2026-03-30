@@ -2527,7 +2527,7 @@ function ElimProductionApp() {
   const [completions, setCompletions, c3] = useStorage("elim3-comp", {});
   const [taskNotes, setTaskNotes, c4] = useStorage("elim3-notes", {});
   const [photos, setPhotos, c5] = useStorage("elim3-photos", {});
-  const [roster, setRoster] = useState(DEFAULT_ROSTER);
+  const [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
   const [timerState, setTimerState, c7] = useStorage("elim3-timer", { startedAt: null, accumulated: 0, targetMinutes: null });
   const [history, setHistory, c8] = useStorage("elim3-history", []);
   const [checklistData, setChecklistData] = useState(CHECKLIST_DATA);
@@ -2582,14 +2582,21 @@ function ElimProductionApp() {
 
   const newWeek = useCallback(() => {
     autoStoppedRef.current = false;
-    // Save lightweight history
     const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
     const liveItems = checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items);
     const totalChecked = liveItems.filter(i => checks[i.id]).length;
-    const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
     const finalElapsed = timerState.startedAt
       ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
       : timerState.accumulated || 0;
+
+    if (totalChecked === 0 && finalElapsed === 0) {
+      setChecks({});
+      setCompletions({});
+      setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+      return;
+    }
+
+    const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
     const record = { date: new Date().toISOString().slice(0, 10), pct, elapsed: finalElapsed, tasks: totalChecked, total: totalItems };
     // Write reset flag before clearing — if interrupted, next load will complete the reset
     window.storage.set("elim3-pending-reset", JSON.stringify(true)).then(() => {
@@ -2631,12 +2638,10 @@ function ElimProductionApp() {
     window.storage.delete("elim3-checklist-data").catch(() => {});
     window.storage.delete("elim3-io-config").catch(() => {});
     window.storage.delete("elim3-repairs").catch(() => {});
-    window.storage.delete("elim3-roster").catch(() => {});
     _ls.del("elim_elim3-checklist-data");
     _ls.del("elim_checklist_version");
     _ls.del("elim_elim3-io-config");
     _ls.del("elim_elim3-repairs");
-    _ls.del("elim_elim3-roster");
   }, []);
 
   // Derive team lists from roster
@@ -2728,7 +2733,7 @@ function ElimProductionApp() {
     autoStoppedRef.current = true;
   }, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
 
-  const loaded = c1 && c2 && c3 && c4 && c7 && c8;
+  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
 
   const titles = {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",

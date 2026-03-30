@@ -1,0 +1,56 @@
+Three fixes needed in index.html:
+1. Roster back to Firebase sync
+Roster is user-managed data that must sync across devices. Change it back to useStorage in ElimProductionApp:
+Change:
+jsconst [roster, setRoster] = useState(DEFAULT_ROSTER);
+To:
+jsconst [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
+Add c6 back to the loaded flag — change:
+jsconst loaded = c1 && c2 && c3 && c4 && c7 && c8;
+To:
+jsconst loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
+2. Remove roster from the cleanup effect
+The cleanup effect currently deletes elim3-roster from Firebase on every page load, which wipes roster data. Remove those two lines.
+Change the cleanup useEffect from:
+jsuseEffect(() => {
+    window.storage.delete("elim3-checklist-data").catch(() => {});
+    window.storage.delete("elim3-io-config").catch(() => {});
+    window.storage.delete("elim3-repairs").catch(() => {});
+    window.storage.delete("elim3-roster").catch(() => {});
+    _ls.del("elim_elim3-checklist-data");
+    _ls.del("elim_checklist_version");
+    _ls.del("elim_elim3-io-config");
+    _ls.del("elim_elim3-repairs");
+    _ls.del("elim_elim3-roster");
+  }, []);
+To:
+jsuseEffect(() => {
+    window.storage.delete("elim3-checklist-data").catch(() => {});
+    window.storage.delete("elim3-io-config").catch(() => {});
+    window.storage.delete("elim3-repairs").catch(() => {});
+    _ls.del("elim_elim3-checklist-data");
+    _ls.del("elim_checklist_version");
+    _ls.del("elim_elim3-io-config");
+    _ls.del("elim_elim3-repairs");
+  }, []);
+3. Don't save empty history records
+In the newWeek function, add a guard at the top so it doesn't save a 0% / 0:00 record. Find this line near the beginning of newWeek:
+jsautoStoppedRef.current = false;
+Right after that line, add:
+jsconst totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
+const liveItems = checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items);
+const totalChecked = liveItems.filter(i => checks[i.id]).length;
+const finalElapsed = timerState.startedAt
+  ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
+  : timerState.accumulated || 0;
+
+// Skip saving history if nothing was completed and no time elapsed
+if (totalChecked === 0 && finalElapsed === 0) {
+  setChecks({});
+  setCompletions({});
+  setTimerState({ startedAt: null, accumulated: 0, targetMinutes: null });
+  return;
+}
+And remove the duplicate declarations of totalItems, liveItems, totalChecked, and finalElapsed that appear below in the same function (they're now declared above the guard).
+What NOT to change
+Everything else is correct: checklist structure, I/O config, and repairs are properly code-only with useState. Assignments, checks, notes, photos, timer, and history are properly on Firebase with useStorage. The real-time sync infrastructure (_startListener, elim-sync events) is working correctly.
