@@ -1,0 +1,47 @@
+REPLIT TASK PROMPT
+
+Task: Fix scroll position restore race condition for async-loaded views (I/O Line List, Repairs)
+In index.html, inside the ElimProductionApp component, the scroll restore fires before async-loaded views have rendered their content. Fix this by deferring scroll restore until the content is in the DOM.
+The problem:
+IOListView and RepairsView use useStorage internally, which means they render a loading placeholder first, then swap in the real content once Firebase/localStorage resolves. The current scroll restore fires on view change via requestAnimationFrame, but the real content isn't mounted yet, so there's nothing to scroll to.
+The fix:
+
+Find the existing scroll restore useEffect in ElimProductionApp. It currently looks like this:
+
+jsxuseEffect(() => {
+  const saved = scrollPositions.current[view] || 0;
+  requestAnimationFrame(() => { window.scrollTo(0, saved); });
+}, [view]);
+
+Replace it with a version that retries until scroll actually takes effect or gives up after a reasonable timeout:
+
+jsxuseEffect(() => {
+  const saved = scrollPositions.current[view] || 0;
+  if (saved === 0) {
+    window.scrollTo(0, 0);
+    return;
+  }
+  let attempts = 0;
+  const tryRestore = () => {
+    window.scrollTo(0, saved);
+    attempts++;
+    if (Math.abs(window.scrollY - saved) > 5 && attempts < 10) {
+      requestAnimationFrame(tryRestore);
+    }
+  };
+  requestAnimationFrame(tryRestore);
+}, [view]);
+How it works:
+
+If saved position is 0, just scroll to top immediately (no retry needed)
+Otherwise, attempt to scroll and check if it actually worked (within 5px tolerance)
+If the page isn't tall enough yet (content still loading), the scroll will silently fail and we retry on the next animation frame
+Gives up after 10 attempts (~160ms) to avoid infinite loops
+Once the async content renders and the page becomes tall enough, the retry succeeds
+
+What NOT to change:
+
+Do not modify the scroll save logic in navigate or goBack — those are correct
+Do not modify IOListView, RepairsView, or any other component
+Do not add scroll logic inside individual view components
+Do not change the version number

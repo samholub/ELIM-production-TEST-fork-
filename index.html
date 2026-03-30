@@ -2685,7 +2685,19 @@ function ElimProductionApp() {
 
   useEffect(() => {
     const saved = scrollPositions.current[view] || 0;
-    requestAnimationFrame(() => { window.scrollTo(0, saved); });
+    if (saved === 0) {
+      window.scrollTo(0, 0);
+      return;
+    }
+    let attempts = 0;
+    const tryRestore = () => {
+      window.scrollTo(0, saved);
+      attempts++;
+      if (Math.abs(window.scrollY - saved) > 5 && attempts < 10) {
+        requestAnimationFrame(tryRestore);
+      }
+    };
+    requestAnimationFrame(tryRestore);
   }, [view]);
 
   useBackSwipe(viewStack.length > 1 && view !== "dashboard" ? goBack : null, contentRef);
