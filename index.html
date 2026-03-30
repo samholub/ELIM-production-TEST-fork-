@@ -1521,8 +1521,8 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
     setEditingTaskText("");
   };
 
-  const totalItems = data.reduce((s, sec) => s + sec.items.length, 0);
-  const allDataItems = data.flatMap(s => s.items);
+  const totalItems = data.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
+  const allDataItems = data.filter(s => s.id !== "post-event").flatMap(s => s.items);
   const totalChecked = allDataItems.filter(i => checks[i.id]).length;
   const pct = Math.round((totalChecked / totalItems) * 100);
 
