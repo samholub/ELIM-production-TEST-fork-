@@ -1,0 +1,38 @@
+Fix data persistence issues across three areas. Same root cause as the checklist fix: persisted data in Firebase overrides code defaults, so code deploys never propagate.
+Changes needed in index.html:
+1. I/O Config → code-only
+In IOListView, the I/O config currently uses useStorage:
+jsconst [ioConfig, setIoConfig, loaded] = useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST);
+Change this to useState:
+jsconst [ioConfig, setIoConfig] = useState(DEFAULT_IO_LINE_LIST);
+const loaded = true;
+Keep the Reset button but relabel it from Reset to Reset to Defaults so it's clear it undoes session edits, not a destructive data wipe. Keep the edit mode — it becomes session-only for temporary tweaks during a service.
+2. Repairs → code-only
+In RepairsView, same change:
+jsconst [repairs, setRepairs, loaded] = useStorage("elim3-repairs", DEFAULT_REPAIRS);
+Change to:
+jsconst [repairs, setRepairs] = useState(DEFAULT_REPAIRS);
+const loaded = true;
+Same as I/O — keep the Reset button, relabel to Reset to Defaults. Keep edit mode as session-only.
+3. Roster → code-only
+In ElimProductionApp, the roster currently uses useStorage:
+jsconst [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
+Change to:
+jsconst [roster, setRoster] = useState(DEFAULT_ROSTER);
+Remove c6 from the loaded flag (it currently reads const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8; — remove c6).
+The in-app add/remove members in Settings still works for one-off situations during a service but won't persist across reloads. Crew changes go through code updates to DEFAULT_ROSTER.
+4. Add cleanup for stale Firebase data
+In the existing cleanup useEffect in ElimProductionApp (the one that already deletes elim3-checklist-data), add these lines:
+jswindow.storage.delete("elim3-io-config").catch(() => {});
+window.storage.delete("elim3-repairs").catch(() => {});
+window.storage.delete("elim3-roster").catch(() => {});
+_ls.del("elim_elim3-io-config");
+_ls.del("elim_elim3-repairs");
+_ls.del("elim_elim3-roster");
+What NOT to change
+
+Settings page — leave the reset button text and descriptions as-is
+Assignments (elim3-assign) — stays in Firebase, persists across weeks
+Checks, completions, timer, history, task notes, photos — all stay in Firebase, these are user-generated data that should sync across devices
+
+Those are the only useStorage calls backed by code defaults. All remaining useStorage calls store user-generated data (checks, assignments, notes, photos, timer, history) which correctly belong in Firebase.

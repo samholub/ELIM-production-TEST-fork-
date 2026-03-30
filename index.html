@@ -344,8 +344,6 @@ const DEFAULT_IO_LINE_LIST = {
   }
 };
 
-const CHECKLIST_VERSION = "5.9.0";
-
 const CHECKLIST_DATA = [
   {
     id: "pre-setup", title: "Pre-Setup", icon: "🙏", color: "#F59E0B",
@@ -1836,7 +1834,8 @@ function PowerSeqView() {
 
 function IOListView() {
   const [tab, setTab] = useState("stageBox");
-  const [ioConfig, setIoConfig, loaded] = useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST);
+  const [ioConfig, setIoConfig] = useState(DEFAULT_IO_LINE_LIST);
+  const loaded = true;
   const [editing, setEditing] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   
@@ -1956,7 +1955,7 @@ function IOListView() {
               padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
               fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
               border: `1px solid ${S.cardBorder}`, color: S.textMuted
-            }}>Reset</button>
+            }}>Reset to Defaults</button>
           )}
         </div>
       </div>
@@ -2303,7 +2302,8 @@ const DEFAULT_REPAIRS = [
 ];
 
 function RepairsView() {
-  const [repairs, setRepairs, loaded] = useStorage("elim3-repairs", DEFAULT_REPAIRS);
+  const [repairs, setRepairs] = useState(DEFAULT_REPAIRS);
+  const loaded = true;
   const [editing, setEditing] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [search, setSearch] = useState("");
@@ -2379,7 +2379,7 @@ function RepairsView() {
               padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
               fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
               border: `1px solid ${S.cardBorder}`, color: S.textMuted
-            }}>Reset</button>
+            }}>Reset to Defaults</button>
           )}
         </div>
         <div style={{ fontSize: 13, color: S.textMuted, marginTop: 8 }}>
@@ -2527,7 +2527,7 @@ function ElimProductionApp() {
   const [completions, setCompletions, c3] = useStorage("elim3-comp", {});
   const [taskNotes, setTaskNotes, c4] = useStorage("elim3-notes", {});
   const [photos, setPhotos, c5] = useStorage("elim3-photos", {});
-  const [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
+  const [roster, setRoster] = useState(DEFAULT_ROSTER);
   const [timerState, setTimerState, c7] = useStorage("elim3-timer", { startedAt: null, accumulated: 0, targetMinutes: null });
   const [history, setHistory, c8] = useStorage("elim3-history", []);
   const [checklistData, setChecklistData] = useState(CHECKLIST_DATA);
@@ -2629,8 +2629,14 @@ function ElimProductionApp() {
 
   useEffect(() => {
     window.storage.delete("elim3-checklist-data").catch(() => {});
+    window.storage.delete("elim3-io-config").catch(() => {});
+    window.storage.delete("elim3-repairs").catch(() => {});
+    window.storage.delete("elim3-roster").catch(() => {});
     _ls.del("elim_elim3-checklist-data");
     _ls.del("elim_checklist_version");
+    _ls.del("elim_elim3-io-config");
+    _ls.del("elim_elim3-repairs");
+    _ls.del("elim_elim3-roster");
   }, []);
 
   // Derive team lists from roster
@@ -2722,7 +2728,7 @@ function ElimProductionApp() {
     autoStoppedRef.current = true;
   }, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
 
-  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
+  const loaded = c1 && c2 && c3 && c4 && c7 && c8;
 
   const titles = {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
