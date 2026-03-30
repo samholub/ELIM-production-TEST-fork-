@@ -1112,7 +1112,7 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
   );
 });
 // ═══════════════════════════════════════════
-function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments, onSetupComplete }) {
+function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments, onSetupComplete, onDeleteHistory }) {
   const [newName, setNewName] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
@@ -1259,6 +1259,10 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
               </div>
               <div style={{ fontSize: 12, fontFamily: S.mono, color: h.pct === 100 ? S.success : S.textMuted, minWidth: 36, textAlign: "right" }}>{h.pct}%</div>
               <div style={{ fontSize: 12, fontFamily: S.mono, color: S.textDim, minWidth: 52, textAlign: "right" }}>{formatTime(h.elapsed)}</div>
+              <button onClick={(e) => { e.stopPropagation(); if (confirm("Remove this history entry?")) onDeleteHistory(i); }} style={{
+                background: "none", border: "none", color: "#7A6E60", fontSize: 14,
+                cursor: "pointer", padding: "2px 4px", opacity: 0.5, fontFamily: "'DM Sans', system-ui, sans-serif"
+              }}>✕</button>
             </div>
           ))}
         </div>
@@ -2587,6 +2591,10 @@ function ElimProductionApp() {
     setTimerState({ startedAt: null, accumulated: 0, targetMinutes: minutes });
   }, [setTimerState]);
 
+  const deleteHistory = useCallback((index) => {
+    setHistory(history.filter((_, i) => i !== index));
+  }, [history, setHistory]);
+
   const newWeek = useCallback(() => {
     autoStoppedRef.current = false;
     const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
@@ -2805,7 +2813,7 @@ function ElimProductionApp() {
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} onNavigate={navigate} />}
         {view === "power-seq" && <PowerSeqView />}
         {view === "io-list" && <IOListView />}
-        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} />}
+        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} onDeleteHistory={deleteHistory} />}
         {view === "network" && <SignalFlowView />}
         {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
         {view === "repairs" && <RepairsView />}
