@@ -2520,8 +2520,12 @@ function ElimProductionApp() {
   // Remember-me: save choice to this device
   const selectUser = useCallback((name) => {
     setCurrentUser(name);
-    if (name) _ls.set("elim_remember_user", name);
-    else _ls.del("elim_remember_user");
+    if (name) {
+      _ls.set("elim_remember_user", name);
+      setViewStack(["my-tasks"]);
+    } else {
+      _ls.del("elim_remember_user");
+    }
   }, []);
 
   // If remembered user was removed from roster, clear
