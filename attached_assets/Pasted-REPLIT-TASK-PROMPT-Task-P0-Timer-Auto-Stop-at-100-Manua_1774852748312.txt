@@ -1,0 +1,82 @@
+REPLIT TASK PROMPT
+
+Task: P0 — Timer Auto-Stop at 100% + Manual "Setup Complete" in Settings
+This is a single feature with two triggers that both stop the timer. Work in index.html only.
+Part A — Auto-stop timer when all setup tasks are checked
+In the ElimProductionApp component:
+
+Add a ref near the other state declarations:
+
+jsxconst autoStoppedRef = useRef(false);
+
+Reset the ref when the timer is manually started or when a new week resets. Inside the existing setRunning callback, add autoStoppedRef.current = false; at the top of the if (shouldRun && !timerState.startedAt) branch. Also inside newWeek, add autoStoppedRef.current = false; at the top.
+Add a new useEffect after the existing timer-related effects. This watches for 100% completion of non-post-event tasks and auto-pauses:
+
+jsxuseEffect(() => {
+  if (!running || autoStoppedRef.current) return;
+  const totalChecked = allItems.filter(i => checks[i.id]).length;
+  if (totalChecked >= totalItems && totalItems > 0) {
+    autoStoppedRef.current = true;
+    setRunning(false);
+  }
+}, [checks, allItems, totalItems, running, setRunning]);
+allItems and totalItems already exclude post-event tasks — they're computed earlier in the component. Do NOT create new filtered arrays.
+Part B — Manual "Setup Complete" button in Settings
+
+In ElimProductionApp, create a new callback:
+
+jsxconst setupComplete = useCallback(() => {
+  const totalChecked = allItems.filter(i => checks[i.id]).length;
+  const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
+  const finalElapsed = timerState.startedAt
+    ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
+    : timerState.accumulated || 0;
+  const record = { date: new Date().toISOString().slice(0, 10), pct, elapsed: finalElapsed, tasks: totalChecked, total: totalItems };
+  setHistory([record, ...history].slice(0, 52));
+  setTimerState({ startedAt: null, accumulated: finalElapsed, targetMinutes: timerState.targetMinutes });
+  autoStoppedRef.current = true;
+}, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
+Note: this does NOT clear checks, assignments, or completions — it just stops the timer and logs the result. The timer keeps its elapsed value visible (not zeroed) so Sam can see the final time.
+
+Pass setupComplete to SettingsView:
+
+jsx{view === "settings" && <SettingsView ... onSetupComplete={setupComplete} />}
+
+In SettingsView, add onSetupComplete to the destructured props.
+In the SettingsView render, add a new block below the existing Reset Checklist section (not above — Reset is more commonly used):
+
+jsx<div style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 20 }}>
+  <div style={{ fontSize: 14, color: S.textDim, marginBottom: 12, lineHeight: 1.5 }}>Stop the timer and save the current setup time to history. Does not clear any checkboxes or assignments.</div>
+  {confirmingComplete ? (
+    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <span style={{ fontSize: 14, color: S.success, fontWeight: 600 }}>Mark setup complete?</span>
+      <button onClick={() => { onSetupComplete(); setConfirmingComplete(false); }} style={{
+        background: "rgba(92,184,122,0.15)", border: "1px solid rgba(92,184,122,0.3)",
+        borderRadius: 8, color: S.success, fontSize: 14, fontWeight: 700, padding: "8px 16px",
+        cursor: "pointer", fontFamily: S.sans
+      }}>Yes, Complete</button>
+      <button onClick={() => setConfirmingComplete(false)} style={{
+        background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+        borderRadius: 8, color: S.textMuted, fontSize: 14, padding: "8px 14px",
+        cursor: "pointer", fontFamily: S.sans
+      }}>Cancel</button>
+    </div>
+  ) : (
+    <button onClick={() => setConfirmingComplete(true)} style={{
+      background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+      borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, padding: "8px 16px",
+      cursor: "pointer", fontFamily: S.sans
+    }}>✅ Setup Complete</button>
+  )}
+</div>
+
+Add confirmingComplete state in SettingsView:
+
+jsxconst [confirmingComplete, setConfirmingComplete] = useState(false);
+What NOT to change:
+
+Do not modify any progress calculations
+Do not modify ChecklistView, DashboardView, or MyTasksView
+Do not change the version number
+Do not change the post-event filter logic
+Do not add any modals, celebrations, or blocking UI

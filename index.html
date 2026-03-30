@@ -1100,9 +1100,10 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
   );
 });
 // ═══════════════════════════════════════════
-function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments }) {
+function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments, onSetupComplete }) {
   const [newName, setNewName] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [confirmingComplete, setConfirmingComplete] = useState(false);
 
   const teamMembers = roster.map(r => r.name);
 
@@ -1161,6 +1162,32 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
             borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, padding: "8px 16px",
             cursor: "pointer", fontFamily: S.sans
           }}>🔄 Reset Checklist</button>
+        )}
+      </div>
+
+      {/* Setup Complete */}
+      <div style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 20 }}>
+        <div style={{ fontSize: 14, color: S.textDim, marginBottom: 12, lineHeight: 1.5 }}>Stop the timer and save the current setup time to history. Does not clear any checkboxes or assignments.</div>
+        {confirmingComplete ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 14, color: S.success, fontWeight: 600 }}>Mark setup complete?</span>
+            <button onClick={() => { onSetupComplete(); setConfirmingComplete(false); }} style={{
+              background: "rgba(92,184,122,0.15)", border: "1px solid rgba(92,184,122,0.3)",
+              borderRadius: 8, color: S.success, fontSize: 14, fontWeight: 700, padding: "8px 16px",
+              cursor: "pointer", fontFamily: S.sans
+            }}>Yes, Complete</button>
+            <button onClick={() => setConfirmingComplete(false)} style={{
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+              borderRadius: 8, color: S.textMuted, fontSize: 14, padding: "8px 14px",
+              cursor: "pointer", fontFamily: S.sans
+            }}>Cancel</button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirmingComplete(true)} style={{
+            background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+            borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, padding: "8px 16px",
+            cursor: "pointer", fontFamily: S.sans
+          }}>✅ Setup Complete</button>
         )}
       </div>
 
@@ -2525,9 +2552,11 @@ function ElimProductionApp() {
     return () => clearInterval(iv);
   }, [timerState]);
 
+  const autoStoppedRef = useRef(false);
+
   const setRunning = useCallback((shouldRun) => {
     if (shouldRun && !timerState.startedAt) {
-      // Start or resume
+      autoStoppedRef.current = false;
       setTimerState({ ...timerState, startedAt: Date.now() });
     } else if (!shouldRun && timerState.startedAt) {
       // Pause — freeze accumulated
@@ -2546,6 +2575,7 @@ function ElimProductionApp() {
   }, [setTimerState]);
 
   const newWeek = useCallback(() => {
+    autoStoppedRef.current = false;
     // Save lightweight history
     const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
     const liveItems = checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items);
@@ -2665,6 +2695,27 @@ function ElimProductionApp() {
     () => checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items.map(i => ({ ...i, section: s }))),
     [checklistData]
   );
+  useEffect(() => {
+    if (!running || autoStoppedRef.current) return;
+    const totalChecked = allItems.filter(i => checks[i.id]).length;
+    if (totalChecked >= totalItems && totalItems > 0) {
+      autoStoppedRef.current = true;
+      setRunning(false);
+    }
+  }, [checks, allItems, totalItems, running, setRunning]);
+
+  const setupComplete = useCallback(() => {
+    const totalChecked = allItems.filter(i => checks[i.id]).length;
+    const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
+    const finalElapsed = timerState.startedAt
+      ? timerState.accumulated + Math.floor((Date.now() - timerState.startedAt) / 1000)
+      : timerState.accumulated || 0;
+    const record = { date: new Date().toISOString().slice(0, 10), pct, elapsed: finalElapsed, tasks: totalChecked, total: totalItems };
+    setHistory([record, ...history].slice(0, 52));
+    setTimerState({ startedAt: null, accumulated: finalElapsed, targetMinutes: timerState.targetMinutes });
+    autoStoppedRef.current = true;
+  }, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
+
   const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
 
   const titles = {
@@ -2730,7 +2781,7 @@ function ElimProductionApp() {
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} onNavigate={navigate} />}
         {view === "power-seq" && <PowerSeqView />}
         {view === "io-list" && <IOListView />}
-        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} />}
+        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} />}
         {view === "network" && <SignalFlowView />}
         {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
         {view === "repairs" && <RepairsView />}
