@@ -254,49 +254,97 @@ const DEFAULT_ROSTER = [
 
 const DEFAULT_IO_LINE_LIST = {
   stageBox: {
-    title: "Stage Box Inputs", description: "XLR inputs on the stage box",
+    title: "Stage Box Inputs", description: "Midas DL251 stage box — 44 channels via AES50 to Wing",
     channels: [
-      { ch: 1, label: "Pastor Mic", type: "XLR", notes: "Wireless receiver" },
-      { ch: 2, label: "Worship Lead Mic", type: "XLR", notes: "" },
-      { ch: 3, label: "Backup Vocal 1", type: "XLR", notes: "" },
-      { ch: 4, label: "Backup Vocal 2", type: "XLR", notes: "" },
-      { ch: 5, label: "Acoustic Guitar DI", type: "DI/XLR", notes: "" },
-      { ch: 6, label: "Electric Guitar DI", type: "DI/XLR", notes: "" },
-      { ch: 7, label: "Bass DI", type: "DI/XLR", notes: "" },
-      { ch: 8, label: "Keys / Piano L", type: "DI/XLR", notes: "" },
-      { ch: 9, label: "Keys / Piano R", type: "DI/XLR", notes: "" },
-      { ch: 10, label: "Kick Drum", type: "XLR", notes: "" },
-      { ch: 11, label: "Snare", type: "XLR", notes: "" },
-      { ch: 12, label: "Overhead L", type: "XLR", notes: "" },
-      { ch: 13, label: "Overhead R", type: "XLR", notes: "" },
-      { ch: 14, label: "Track L", type: "Line", notes: "From ProTools" },
-      { ch: 15, label: "Track R", type: "Line", notes: "From ProTools" },
-      { ch: 16, label: "Click", type: "Line", notes: "In-ear only — NOT to FOH" },
+      { ch: 1, label: "Kick IN", type: "XLR", notes: "Snake 1" },
+      { ch: 2, label: "Kick OUT / Cajon", type: "XLR", notes: "" },
+      { ch: 3, label: "Snare Up", type: "XLR", notes: "Snake 2" },
+      { ch: 4, label: "Snare Down", type: "XLR", notes: "" },
+      { ch: 5, label: "Rack Tom", type: "XLR", notes: "Snake 3" },
+      { ch: 6, label: "Floor Tom", type: "XLR", notes: "Snake 4" },
+      { ch: 7, label: "Hats", type: "XLR", notes: "" },
+      { ch: 8, label: "OH1", type: "XLR", notes: "Snake 5" },
+      { ch: 9, label: "OH2", type: "XLR", notes: "Snake 6" },
+      { ch: 10, label: "Click Metronome", type: "Line", notes: "In-ear only — NOT to FOH" },
+      { ch: 11, label: "DrumPad SPD L", type: "Line", notes: "Snake 7" },
+      { ch: 12, label: "DrumPad SPD R", type: "Line", notes: "Snake 8" },
+      { ch: 13, label: "Shake", type: "XLR", notes: "" },
+      { ch: 14, label: "MOOG Bass", type: "DI/XLR", notes: "" },
+      { ch: 15, label: "Bass GTR", type: "DI/XLR", notes: "" },
+      { ch: 16, label: "AG 1", type: "DI/XLR", notes: "" },
+      { ch: 17, label: "AG 2", type: "DI/XLR", notes: "" },
+      { ch: 18, label: "EG 2 Mono", type: "DI/XLR", notes: "" },
+      { ch: 19, label: "EG 1 L1 L", type: "DI/XLR", notes: "" },
+      { ch: 20, label: "EG 1 R", type: "DI/XLR", notes: "" },
+      { ch: 21, label: "Nord Piano L", type: "DI/XLR", notes: "" },
+      { ch: 22, label: "Nord Piano R", type: "DI/XLR", notes: "" },
+      { ch: 23, label: "Keys L (Matt/Mitch synth)", type: "DI/XLR", notes: "" },
+      { ch: 24, label: "Keys R (Matt/Mitch synth)", type: "DI/XLR", notes: "" },
+      { ch: 25, label: "iPad Synth", type: "DI/XLR", notes: "" },
+      { ch: 26, label: "Mitch TB", type: "XLR", notes: "Talk back" },
+      { ch: 27, label: "Sunny TB - PANIC", type: "XLR", notes: "Channel B" },
+      { ch: 28, label: "Sunny Vox - PANIC", type: "XLR", notes: "Channel A" },
+      { ch: 29, label: "Jacob Vox", type: "XLR", notes: "New W1 wireless" },
+      { ch: 30, label: "Michael Vox", type: "XLR", notes: "New W2 wireless" },
+      { ch: 31, label: "Courtney", type: "XLR", notes: "" },
+      { ch: 32, label: "Olivia", type: "XLR", notes: "" },
+      { ch: 33, label: "Matt Vox", type: "XLR", notes: "" },
+      { ch: 34, label: "Vox 7", type: "XLR", notes: "" },
+      { ch: 35, label: "Vox 8", type: "XLR", notes: "" },
+      { ch: 36, label: "Vox 9", type: "XLR", notes: "" },
+      { ch: 37, label: "Pastor Wireless", type: "XLR", notes: "Wireless" },
+      { ch: 38, label: "Mami Wireless", type: "XLR", notes: "Wireless" },
+      { ch: 39, label: "Anno. 1", type: "XLR", notes: "New W3 wireless" },
+      { ch: 40, label: "Anno. 2", type: "XLR", notes: "New W4 wireless" },
+      { ch: 41, label: "Crowd 1", type: "XLR", notes: "" },
+      { ch: 42, label: "Crowd 2", type: "XLR", notes: "" },
+      { ch: 43, label: "Crowd 3", type: "XLR", notes: "" },
+      { ch: 44, label: "Crowd 4", type: "XLR", notes: "" },
+    ]
+  },
+  wingInputs: {
+    title: "Wing Direct Inputs", description: "Inputs connected directly to the Wing (not via stage box)",
+    channels: [
+      { ch: "Wing 8", label: "Bianca TB", type: "XLR", notes: "Talk back — direct Wing input" },
+      { ch: "Dante 47-48", label: "ProPresenter PC", type: "Dante", notes: "Via Dante network" },
     ]
   },
   outputs: {
-    title: "Main Outputs", description: "FOH and monitor output routing from the Wing",
+    title: "Outputs", description: "Wing output routing — IEM packs, subs, mains",
     channels: [
-      { ch: "L/R Main", label: "FOH Speakers", destination: "Powered Speakers (Both Sides)" },
-      { ch: "Sub", label: "Subwoofers", destination: "Powered Subs" },
-      { ch: "Aux 1", label: "Worship Lead IEM", destination: "In-ear transmitter" },
-      { ch: "Aux 2", label: "Band IEM Mix", destination: "In-ear transmitter" },
-      { ch: "XLR Out 8", label: "Bianca's IEM", destination: "In-ear transmitter" },
+      { ch: 1, label: "Sunny P1", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 2, label: "Mitch P2", destination: "In-ear transmitter", inEarSnake: "Michael" },
+      { ch: 3, label: "Jacob P3", destination: "In-ear transmitter", inEarSnake: "Austin" },
+      { ch: 4, label: "Michael P4", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 5, label: "Austin P5", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 6, label: "Omar P6", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 7, label: "Andy (wired)", destination: "Wired in-ear", inEarSnake: "Snake 7" },
+      { ch: 8, label: "Randall (wired)", destination: "Wired in-ear", inEarSnake: "" },
+      { ch: 9, label: "Olivia", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 10, label: "Court", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 11, label: "(unused)", destination: "", inEarSnake: "" },
+      { ch: 12, label: "Josh (wired)", destination: "Wired in-ear", inEarSnake: "" },
+      { ch: 13, label: "Subs L", destination: "Powered Sub L", inEarSnake: "" },
+      { ch: 14, label: "Subs R", destination: "Powered Sub R", inEarSnake: "" },
+      { ch: "W15", label: "Main L", destination: "Powered Speaker L", inEarSnake: "" },
+      { ch: 16, label: "Main R", destination: "Powered Speaker R", inEarSnake: "" },
+      { ch: "Wing 8", label: "Bianca IEM", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: "Wing 7", label: "(unused)", destination: "", inEarSnake: "" },
     ]
   },
   danteRouting: {
     title: "Dante Routing", description: "Dante network audio paths",
     routes: [
-      { from: "Wing Dante Expansion", to: "Omar/Mitch's ProTools Mac", channels: "All inputs for stream mix (Dante)", protocol: "Dante" },
-      { from: "Wing Dante Expansion", to: "Glenn's ProPresenter Mac", channels: "Dante audio for presentation", protocol: "Dante" },
-      { from: "Wing Dante Expansion", to: "Dante AVIO", channels: "Monitor mix", protocol: "Dante" },
-      { from: "Dante AVIO", to: "ATEM Mini Pro", channels: "Analog Audio IN Ch 1-2", protocol: "Analog" },
+      { from: "Wing Dante Expansion", to: "Omar/Mitch's ProTools Mac", channels: "All inputs for stream mix", protocol: "Dante" },
+      { from: "Wing Dante Expansion", to: "Bianca's ProPresenter Mac", channels: "Dante 47-48 (ProPresenter audio)", protocol: "Dante" },
+      { from: "Wing Dante Expansion", to: "Dante AVIO", channels: "Monitor mix → analog out", protocol: "Dante" },
+      { from: "Dante AVIO", to: "ATEM Television Studio Pro 4K", channels: "Analog Audio IN Ch 1-2", protocol: "Analog" },
       { from: "Tyler's ProTools Mac", to: "Wing", channels: "Direct recording (USB-C, NOT Dante)", protocol: "USB-C" },
     ]
   }
 };
 
-const CHECKLIST_VERSION = "5.7.0";
+const CHECKLIST_VERSION = "5.9.0";
 
 const CHECKLIST_DATA = [
   {
@@ -436,13 +484,13 @@ const CHECKLIST_DATA = [
   {
     id: "camera-setup", title: "Camera Setup", icon: "📹", color: "#06B6D4",
     items: [
-      { id: "cs-1b", task: "Setup ATEM Mini Pro",
+      { id: "cs-1b", task: "Setup ATEM Television Studio Pro 4K",
         detail: "Setup Resi Encoder alongside ATEM — connect ATEM Control Ethernet to Resi Encoder LAN 1.",
       },
       { id: "cs-2", task: "Plug ATEM USB cable into Glenn's ProPresenter Mac",
         photos: [{ slot: "cs2-atem-usb", label: "ATEM USB to Mac" }],
       },
-      { id: "cs-1", task: "Plug in camera power and run SDI/HDMI Extender to ATEM Mini Pro",
+      { id: "cs-1", task: "Plug in camera power and run SDI/HDMI Extender to ATEM Television Studio Pro 4K",
         photos: [{ slot: "cs1-camera-atem", label: "Camera to ATEM connection" }],
       },
     ]
@@ -1188,7 +1236,7 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
           <ElimLogo size={28} />
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: S.text }}>ELIM Production</div>
-            <div style={{ fontSize: 12, color: S.textMuted }}>v5.8.0</div>
+            <div style={{ fontSize: 12, color: S.textMuted }}>v5.9.0</div>
           </div>
         </div>
         <div style={{ fontSize: 12, color: S.textMuted, lineHeight: 1.5 }}>Setup checklist for ELIM Church production team. Data syncs across all devices in real time.</div>
@@ -1751,7 +1799,7 @@ function IOListView() {
   const [editing, setEditing] = useState(false);
   const [confirmingReset, setConfirmingReset] = useState(false);
   
-  const tabs = [{ id: "stageBox", label: "Inputs" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
+  const tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
   
   if (!loaded) return <div style={{ padding: "16px", textAlign: "center", color: S.textMuted }}>Loading I/O configuration...</div>;
   
@@ -1799,8 +1847,10 @@ function IOListView() {
         ? updated.stageBox.channels[updated.stageBox.channels.length - 1].ch 
         : 0;
       updated.stageBox.channels.push({ ch: lastCh, label: "New Channel", type: "XLR", notes: "" });
+    } else if (tabKey === "wingInputs") {
+      updated.wingInputs.channels.push({ ch: "Wing", label: "New Input", type: "XLR", notes: "" });
     } else if (tabKey === "outputs") {
-      updated.outputs.channels.push({ ch: "Aux " + (updated.outputs.channels.length + 1), label: "New Output", destination: "" });
+      updated.outputs.channels.push({ ch: "Aux " + (updated.outputs.channels.length + 1), label: "New Output", destination: "", inEarSnake: "" });
     } else if (tabKey === "danteRouting") {
       updated.danteRouting.routes.push({ from: "Source", to: "Destination", channels: "", protocol: "Dante" });
     }
@@ -1912,6 +1962,39 @@ function IOListView() {
         </div>
       ))}
       
+      {tab === "stageBox" && <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{ioConfig.stageBox.channels.length} channels</div>}
+      
+      {/* Wing Direct Inputs */}
+      {tab === "wingInputs" && ioConfig.wingInputs && ioConfig.wingInputs.channels.map((ch, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+          <div style={{ minWidth: 60, fontSize: 12, color: S.accentText, background: S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
+            {editing ? (
+              <input value={ch.ch} onChange={e => updateChannel("wingInputs", i, "ch", e.target.value)}
+                style={{ width: 60, textAlign: "center", background: "transparent", border: "none", color: S.accentText, fontSize: 12, fontWeight: 600, fontFamily: S.mono, outline: "none" }} />
+            ) : ch.ch}
+          </div>
+          <div style={{ flex: 1 }}>
+            {editing ? (
+              <>
+                <input value={ch.label} onChange={e => updateChannel("wingInputs", i, "label", e.target.value)}
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                <input value={ch.notes} onChange={e => updateChannel("wingInputs", i, "notes", e.target.value)} placeholder="Notes..."
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+              </>
+            ) : (
+              <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>{ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}</>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
+          {editing && (
+            <button onClick={() => removeChannel("wingInputs", i)} style={{
+              background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+              borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+            }}>✕</button>
+          )}
+        </div>
+      ))}
+      
       {/* Outputs */}
       {tab === "outputs" && ioConfig.outputs.channels.map((ch, i) => (
         <div key={i} style={{ padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
@@ -1929,9 +2012,15 @@ function IOListView() {
                     style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
                   <input value={ch.destination} onChange={e => updateChannel("outputs", i, "destination", e.target.value)} placeholder="Destination..."
                     style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                  <input value={ch.inEarSnake || ""} onChange={e => updateChannel("outputs", i, "inEarSnake", e.target.value)} placeholder="In-ear snake..."
+                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
                 </>
               ) : (
-                <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div><div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div></>
+                <>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
+                  {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
+                  {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+                </>
               )}
             </div>
             {editing && (
@@ -1995,7 +2084,7 @@ function IOListView() {
           cursor: "pointer", fontFamily: S.sans, marginTop: 8,
           background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
           color: S.textMuted
-        }}>+ Add {tab === "stageBox" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
+        }}>+ Add {tab === "stageBox" ? "Input" : tab === "wingInputs" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
       )}
     </div>
   );
@@ -2088,7 +2177,7 @@ function SignalFlowView() {
 
           <Arrow x1={465} y1={544} x2={465} y2={596}/>
           <Label x={475} y={576} text="Analog In"/>
-          <Box x={375} y={596} w={180} h={50} label="ATEM Mini Pro" sub="(Audio In Ch 1-2)"/>
+          <Box x={375} y={596} w={180} h={50} label="ATEM TV Studio 4K" sub="(Audio In Ch 1-2)"/>
         </svg>
       </div>
 
@@ -2100,7 +2189,7 @@ function SignalFlowView() {
           <Arrow x1={240} y1={50} x2={240} y2={80}/>
           <Label x={250} y={70} text="SDI / HDMI"/>
 
-          <Box x={150} y={80} w={180} h={40} label="ATEM Mini Pro"/>
+          <Box x={150} y={80} w={180} h={40} label="ATEM TV Studio 4K"/>
           <Arrow x1={240} y1={120} x2={240} y2={150}/>
           <Label x={250} y={140} text="USB"/>
 
@@ -2150,7 +2239,7 @@ function SignalFlowView() {
 
           <Arrow x1={240} y1={240} x2={240} y2={290}/>
           <Label x={250} y={272} text="Analog In"/>
-          <Box x={150} y={290} w={180} h={50} label="ATEM Mini Pro" sub="(Audio In Ch 1-2)"/>
+          <Box x={150} y={290} w={180} h={50} label="ATEM TV Studio 4K" sub="(Audio In Ch 1-2)"/>
 
           <Arrow x1={400} y1={156} x2={400} y2={190}/>
           <Label x={410} y={180} text="CAT6"/>
@@ -2451,8 +2540,8 @@ function ElimProductionApp() {
 
   const newWeek = useCallback(() => {
     // Save lightweight history
-    const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
-    const liveItems = checklistData.flatMap(s => s.items);
+    const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
+    const liveItems = checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items);
     const totalChecked = liveItems.filter(i => checks[i.id]).length;
     const pct = totalItems > 0 ? Math.round((totalChecked / totalItems) * 100) : 0;
     const finalElapsed = timerState.startedAt
@@ -2564,9 +2653,9 @@ function ElimProductionApp() {
 
   useBackSwipe(viewStack.length > 1 && view !== "dashboard" ? goBack : null, contentRef);
 
-  const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
+  const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
   const allItems = useMemo(
-    () => checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s }))),
+    () => checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items.map(i => ({ ...i, section: s }))),
     [checklistData]
   );
   const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;

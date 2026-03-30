@@ -1,0 +1,279 @@
+# Replit Task: Update index.html — 4 Changes
+
+Edit `index.html` in this workspace. After all changes, commit and push to GitHub.
+
+---
+
+## Change 1: Replace DEFAULT_IO_LINE_LIST
+
+Find `const DEFAULT_IO_LINE_LIST = {` (around line 255) through the closing `};` before `const CHECKLIST_VERSION`. Replace the ENTIRE object with this:
+
+```javascript
+const DEFAULT_IO_LINE_LIST = {
+  stageBox: {
+    title: "Stage Box Inputs", description: "Midas DL251 stage box — 44 channels via AES50 to Wing",
+    channels: [
+      { ch: 1, label: "Kick IN", type: "XLR", notes: "Snake 1" },
+      { ch: 2, label: "Kick OUT / Cajon", type: "XLR", notes: "" },
+      { ch: 3, label: "Snare Up", type: "XLR", notes: "Snake 2" },
+      { ch: 4, label: "Snare Down", type: "XLR", notes: "" },
+      { ch: 5, label: "Rack Tom", type: "XLR", notes: "Snake 3" },
+      { ch: 6, label: "Floor Tom", type: "XLR", notes: "Snake 4" },
+      { ch: 7, label: "Hats", type: "XLR", notes: "" },
+      { ch: 8, label: "OH1", type: "XLR", notes: "Snake 5" },
+      { ch: 9, label: "OH2", type: "XLR", notes: "Snake 6" },
+      { ch: 10, label: "Click Metronome", type: "Line", notes: "In-ear only — NOT to FOH" },
+      { ch: 11, label: "DrumPad SPD L", type: "Line", notes: "Snake 7" },
+      { ch: 12, label: "DrumPad SPD R", type: "Line", notes: "Snake 8" },
+      { ch: 13, label: "Shake", type: "XLR", notes: "" },
+      { ch: 14, label: "MOOG Bass", type: "DI/XLR", notes: "" },
+      { ch: 15, label: "Bass GTR", type: "DI/XLR", notes: "" },
+      { ch: 16, label: "AG 1", type: "DI/XLR", notes: "" },
+      { ch: 17, label: "AG 2", type: "DI/XLR", notes: "" },
+      { ch: 18, label: "EG 2 Mono", type: "DI/XLR", notes: "" },
+      { ch: 19, label: "EG 1 L1 L", type: "DI/XLR", notes: "" },
+      { ch: 20, label: "EG 1 R", type: "DI/XLR", notes: "" },
+      { ch: 21, label: "Nord Piano L", type: "DI/XLR", notes: "" },
+      { ch: 22, label: "Nord Piano R", type: "DI/XLR", notes: "" },
+      { ch: 23, label: "Keys L (Matt/Mitch synth)", type: "DI/XLR", notes: "" },
+      { ch: 24, label: "Keys R (Matt/Mitch synth)", type: "DI/XLR", notes: "" },
+      { ch: 25, label: "iPad Synth", type: "DI/XLR", notes: "" },
+      { ch: 26, label: "Mitch TB", type: "XLR", notes: "Talk back" },
+      { ch: 27, label: "Sunny TB - PANIC", type: "XLR", notes: "Channel B" },
+      { ch: 28, label: "Sunny Vox - PANIC", type: "XLR", notes: "Channel A" },
+      { ch: 29, label: "Jacob Vox", type: "XLR", notes: "New W1 wireless" },
+      { ch: 30, label: "Michael Vox", type: "XLR", notes: "New W2 wireless" },
+      { ch: 31, label: "Courtney", type: "XLR", notes: "" },
+      { ch: 32, label: "Olivia", type: "XLR", notes: "" },
+      { ch: 33, label: "Matt Vox", type: "XLR", notes: "" },
+      { ch: 34, label: "Vox 7", type: "XLR", notes: "" },
+      { ch: 35, label: "Vox 8", type: "XLR", notes: "" },
+      { ch: 36, label: "Vox 9", type: "XLR", notes: "" },
+      { ch: 37, label: "Pastor Wireless", type: "XLR", notes: "Wireless" },
+      { ch: 38, label: "Mami Wireless", type: "XLR", notes: "Wireless" },
+      { ch: 39, label: "Anno. 1", type: "XLR", notes: "New W3 wireless" },
+      { ch: 40, label: "Anno. 2", type: "XLR", notes: "New W4 wireless" },
+      { ch: 41, label: "Crowd 1", type: "XLR", notes: "" },
+      { ch: 42, label: "Crowd 2", type: "XLR", notes: "" },
+      { ch: 43, label: "Crowd 3", type: "XLR", notes: "" },
+      { ch: 44, label: "Crowd 4", type: "XLR", notes: "" },
+    ]
+  },
+  wingInputs: {
+    title: "Wing Direct Inputs", description: "Inputs connected directly to the Wing (not via stage box)",
+    channels: [
+      { ch: "Wing 8", label: "Bianca TB", type: "XLR", notes: "Talk back — direct Wing input" },
+      { ch: "Dante 47-48", label: "ProPresenter PC", type: "Dante", notes: "Via Dante network" },
+    ]
+  },
+  outputs: {
+    title: "Outputs", description: "Wing output routing — IEM packs, subs, mains",
+    channels: [
+      { ch: 1, label: "Sunny P1", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 2, label: "Mitch P2", destination: "In-ear transmitter", inEarSnake: "Michael" },
+      { ch: 3, label: "Jacob P3", destination: "In-ear transmitter", inEarSnake: "Austin" },
+      { ch: 4, label: "Michael P4", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 5, label: "Austin P5", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 6, label: "Omar P6", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 7, label: "Andy (wired)", destination: "Wired in-ear", inEarSnake: "Snake 7" },
+      { ch: 8, label: "Randall (wired)", destination: "Wired in-ear", inEarSnake: "" },
+      { ch: 9, label: "Olivia", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 10, label: "Court", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: 11, label: "(unused)", destination: "", inEarSnake: "" },
+      { ch: 12, label: "Josh (wired)", destination: "Wired in-ear", inEarSnake: "" },
+      { ch: 13, label: "Subs L", destination: "Powered Sub L", inEarSnake: "" },
+      { ch: 14, label: "Subs R", destination: "Powered Sub R", inEarSnake: "" },
+      { ch: "W15", label: "Main L", destination: "Powered Speaker L", inEarSnake: "" },
+      { ch: 16, label: "Main R", destination: "Powered Speaker R", inEarSnake: "" },
+      { ch: "Wing 8", label: "Bianca IEM", destination: "In-ear transmitter", inEarSnake: "" },
+      { ch: "Wing 7", label: "(unused)", destination: "", inEarSnake: "" },
+    ]
+  },
+  danteRouting: {
+    title: "Dante Routing", description: "Dante network audio paths",
+    routes: [
+      { from: "Wing Dante Expansion", to: "Omar/Mitch's ProTools Mac", channels: "All inputs for stream mix", protocol: "Dante" },
+      { from: "Wing Dante Expansion", to: "Bianca's ProPresenter Mac", channels: "Dante 47-48 (ProPresenter audio)", protocol: "Dante" },
+      { from: "Wing Dante Expansion", to: "Dante AVIO", channels: "Monitor mix → analog out", protocol: "Dante" },
+      { from: "Dante AVIO", to: "ATEM Television Studio Pro 4K", channels: "Analog Audio IN Ch 1-2", protocol: "Analog" },
+      { from: "Tyler's ProTools Mac", to: "Wing", channels: "Direct recording (USB-C, NOT Dante)", protocol: "USB-C" },
+    ]
+  }
+};
+```
+
+This adds a new `wingInputs` section. The `IOListView` component needs these updates to support it:
+
+### 1a. Update the tabs array in IOListView
+
+Find:
+```javascript
+const tabs = [{ id: "stageBox", label: "Inputs" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
+```
+Replace with:
+```javascript
+const tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
+```
+
+### 1b. Update addChannel to handle wingInputs
+
+In the `addChannel` function, find:
+```javascript
+    } else if (tabKey === "outputs") {
+      updated.outputs.channels.push({ ch: "Aux " + (updated.outputs.channels.length + 1), label: "New Output", destination: "" });
+```
+Replace with:
+```javascript
+    } else if (tabKey === "wingInputs") {
+      updated.wingInputs.channels.push({ ch: "Wing", label: "New Input", type: "XLR", notes: "" });
+    } else if (tabKey === "outputs") {
+      updated.outputs.channels.push({ ch: "Aux " + (updated.outputs.channels.length + 1), label: "New Output", destination: "", inEarSnake: "" });
+```
+
+### 1c. Add wingInputs rendering after the stageBox section
+
+After the `{/* Stage Box Inputs */}` section's closing `})}`, add a channel count line and the Wing Direct Inputs section. Find the line:
+```
+      {/* Outputs */}
+```
+Insert BEFORE it:
+```jsx
+      {tab === "stageBox" && <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{ioConfig.stageBox.channels.length} channels</div>}
+      
+      {/* Wing Direct Inputs */}
+      {tab === "wingInputs" && ioConfig.wingInputs && ioConfig.wingInputs.channels.map((ch, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+          <div style={{ minWidth: 60, fontSize: 12, color: S.accentText, background: S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
+            {editing ? (
+              <input value={ch.ch} onChange={e => updateChannel("wingInputs", i, "ch", e.target.value)}
+                style={{ width: 60, textAlign: "center", background: "transparent", border: "none", color: S.accentText, fontSize: 12, fontWeight: 600, fontFamily: S.mono, outline: "none" }} />
+            ) : ch.ch}
+          </div>
+          <div style={{ flex: 1 }}>
+            {editing ? (
+              <>
+                <input value={ch.label} onChange={e => updateChannel("wingInputs", i, "label", e.target.value)}
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                <input value={ch.notes} onChange={e => updateChannel("wingInputs", i, "notes", e.target.value)} placeholder="Notes..."
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+              </>
+            ) : (
+              <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>{ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}</>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
+          {editing && (
+            <button onClick={() => removeChannel("wingInputs", i)} style={{
+              background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+              borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+            }}>✕</button>
+          )}
+        </div>
+      ))}
+      
+```
+
+### 1d. Update outputs rendering to show inEarSnake
+
+In the outputs section's non-editing display, find:
+```jsx
+              <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div><div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div></>
+```
+Replace with:
+```jsx
+              <>
+                <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
+                {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
+                {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+              </>
+```
+
+In the outputs section's editing display, after the destination input field, add an inEarSnake input:
+```jsx
+                  <input value={ch.inEarSnake || ""} onChange={e => updateChannel("outputs", i, "inEarSnake", e.target.value)} placeholder="In-ear snake..."
+                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+```
+
+### 1e. Update the add button label
+
+Find:
+```javascript
+        }}>+ Add {tab === "stageBox" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
+```
+Replace with:
+```javascript
+        }}>+ Add {tab === "stageBox" ? "Input" : tab === "wingInputs" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
+```
+
+---
+
+## Change 2: Replace all "ATEM Mini Pro" with correct name
+
+Search for every instance of `ATEM Mini Pro` in the file. There should be 6 total. Replace each:
+
+- In checklist task text (2 instances): replace with `ATEM Television Studio Pro 4K`
+- In SVG Box labels (3 instances): replace with `ATEM TV Studio 4K` (shortened to fit SVG boxes)
+- In Dante routing (1 instance): already handled by Change 1 above
+
+After this change, `grep "ATEM Mini Pro" index.html` should return 0 results.
+
+---
+
+## Change 3: Exclude Post-Event from timer/progress
+
+The Post-Event section (id: `"post-event"`) has 3 teardown tasks that shouldn't count in the setup progress percentage or timer history.
+
+### 3a. In the `newWeek` function (search for `// Save lightweight history`):
+
+Find:
+```javascript
+    const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
+    const liveItems = checklistData.flatMap(s => s.items);
+```
+Replace with:
+```javascript
+    const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
+    const liveItems = checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items);
+```
+
+### 3b. In the main app body (search for `useBackSwipe`, the totalItems/allItems are a few lines after):
+
+Find:
+```javascript
+  const totalItems = checklistData.reduce((s, sec) => s + sec.items.length, 0);
+  const allItems = useMemo(
+    () => checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s }))),
+    [checklistData]
+  );
+```
+Replace with:
+```javascript
+  const totalItems = checklistData.filter(sec => sec.id !== "post-event").reduce((s, sec) => s + sec.items.length, 0);
+  const allItems = useMemo(
+    () => checklistData.filter(s => s.id !== "post-event").flatMap(s => s.items.map(i => ({ ...i, section: s }))),
+    [checklistData]
+  );
+```
+
+**Do NOT change** the `totalItems` inside `ChecklistView` — that one should still count all tasks so the full checklist view shows everything.
+
+---
+
+## Change 4: Version bump
+
+Find:
+```javascript
+const CHECKLIST_VERSION = "5.7.0";
+```
+Replace with:
+```javascript
+const CHECKLIST_VERSION = "5.9.0";
+```
+
+---
+
+## After all changes
+
+1. Verify the app loads in the Replit preview without errors
+2. Run: `git add . && git commit -m "v5.9.0 — I/O data update, ATEM name fix, post-event timer exclusion" && git push`
+3. Run: `firebase deploy --only hosting`

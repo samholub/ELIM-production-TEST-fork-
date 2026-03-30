@@ -8,7 +8,7 @@ A Progressive Web App (PWA) for managing weekly AV equipment setup and teardown 
 - **Frontend:** React 18 loaded via CDN, JSX transpiled in-browser by Babel Standalone
 - **Database:** Firebase Realtime Database (with localStorage fallback for offline support)
 - **Styling:** Inline JavaScript styles + base CSS in the HTML file
-- **Version:** v5.8.0
+- **Version:** v5.9.0
 
 ## Project Layout
 
