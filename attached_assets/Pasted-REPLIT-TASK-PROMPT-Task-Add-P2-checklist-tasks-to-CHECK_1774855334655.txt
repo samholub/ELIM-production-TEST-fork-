@@ -1,0 +1,40 @@
+REPLIT TASK PROMPT
+
+Task: Add P2 checklist tasks to CHECKLIST_DATA in index.html
+Six changes to the CHECKLIST_DATA constant. All are data-only — no component logic changes.
+1. Add drum click battery check to Mic Check section
+Find the mic-check section. After mc-2, add:
+jsx{ id: "mc-3", task: "Check batteries in drum click" },
+2. Add spotlight task to Camera Setup section
+Find the camera-setup section. After cs-1 (the last current item), add:
+jsx{ id: "cs-3", task: "Setup stage spotlight",
+  detail: "Position and power on stage lighting for speaker/pastor area." },
+3. Add speaker/wall spacing reference to sb-4
+Find task sb-4 ("Setup speakers"). It currently has only a photos field. Add a detail field:
+jsx{ id: "sb-4", task: "Setup speakers",
+  detail: "Spacing reference: 25ft wall-to-chairs, 13ft carpet edge to chairs, 11.5ft speakers from wall corner.",
+  photos: [{ slot: "sb4-speakers", label: "Speaker positions" }],
+},
+4. Update sb-1 troubleshooting for wheel stability
+Find the sb-1 troubleshooting array. Add a second entry after the existing "Wheels sticking?" entry:
+jsxtroubleshooting: [
+  { q: "Wheels sticking?", a: "Wheels need grease or replacement — check maintenance list." },
+  { q: "Stage box wobbling?", a: "Lock the caster wheels before setup. All four wheels should be locked for stability." }
+]
+5. Replace cs-1 with separate camera tasks (4 cameras)
+Find task cs-1. Replace it with four separate tasks:
+jsx{ id: "cs-1", task: "Camera 1: Power on BlackMagic wide-angle and run SDI to ATEM IN 1",
+  detail: "Fixed position camera. SDI cable direct to ATEM SDI Input 1.",
+  photos: [{ slot: "cs1-camera-atem", label: "Camera 1 to ATEM connection" }],
+},
+{ id: "cs-4", task: "Camera 2: Power on handheld camera and verify Hollyland wireless to ATEM IN 2",
+  detail: "Wireless camera via Hollyland receiver. Receiver SDI out to ATEM SDI Input 2.",
+},
+{ id: "cs-5", task: "Camera 3: Power on DJI camera and run SDI to ATEM IN 3" },
+{ id: "cs-6", task: "Camera 4: Power on BlackMagic 6K and run SDI to ATEM IN 4" },
+What NOT to change:
+
+Do not modify any component logic, render code, or styles
+Do not change the version number
+Do not change any other sections of CHECKLIST_DATA
+Do not touch DEFAULT_IO_LINE_LIST, POWER_SEQUENCE, or any other constants
