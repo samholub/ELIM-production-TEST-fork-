@@ -1,0 +1,66 @@
+Edit 1: Remove photos from loaded gate
+Find:
+javascript  const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8;
+Replace with:
+javascript  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
+
+Edit 2: Firebase .info/connected offline banner
+2A — Add state and listener in ElimProductionApp (insert right after the syncError state declaration and its useEffect):
+Find:
+javascript  // Derive running from timer state
+Replace with:
+javascript  // Offline detection via Firebase .info/connected
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    if (!_fb) return;
+    const connRef = firebase.database().ref('.info/connected');
+    const handler = (snap) => setOffline(snap.val() === false);
+    connRef.on('value', handler);
+    return () => connRef.off('value', handler);
+  }, []);
+
+  // Derive running from timer state
+2B — Render the banner (insert right after the header spacer div):
+Find:
+javascript      <div style={{ height: "calc(48px + env(safe-area-inset-top, 0px))" }} />
+      <div ref={contentRef} style={{ maxWidth: 600, margin: "0 auto" }}>
+Replace with:
+javascript      <div style={{ height: "calc(48px + env(safe-area-inset-top, 0px))" }} />
+      {offline && (
+        <div style={{ position: "fixed", top: "calc(48px + env(safe-area-inset-top, 0px))", left: 0, right: 0, zIndex: 45, background: "rgba(245,158,11,0.15)", borderBottom: "1px solid rgba(245,158,11,0.3)", padding: "6px 16px", textAlign: "center", fontSize: 13, color: "#FBBF24", fontWeight: 600, fontFamily: S.sans, backdropFilter: "blur(8px)" }}>
+          Offline — changes saved locally
+        </div>
+      )}
+      <div ref={contentRef} style={{ maxWidth: 600, margin: "0 auto" }}>
+
+Edit 3: Checkbox tap target (28px visual, 44px tappable)
+Find:
+javascript        <button onClick={handleToggle} style={{
+          width: 28, height: 28, minWidth: 28, borderRadius: 7,
+          border: `2px solid ${checked ? S.success : S.checkboxEmpty}`,
+          background: checked ? S.success : "transparent",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s ease", flexShrink: 0
+        }}>{checked && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}</button>
+Replace with:
+javascript        <button onClick={handleToggle} style={{
+          width: 44, height: 44, minWidth: 44,
+          border: "none", background: "transparent",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0, padding: 0
+        }}><div style={{
+          width: 28, height: 28, borderRadius: 7,
+          border: `2px solid ${checked ? S.success : S.checkboxEmpty}`,
+          background: checked ? S.success : "transparent",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s ease"
+        }}>{checked && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}</div></button>
+
+Edit 4: Roster removal shows assignment count
+Find:
+javascript    if (!confirm(`Remove ${name} from the roster? Their task assignments will be cleared.`)) return;
+Replace with:
+javascript    const assignCount = assignments ? Object.values(assignments).filter(v => v === name).length : 0;
+    if (!confirm(assignCount > 0
+      ? `Remove ${name} from the roster? Their ${assignCount} task assignment${assignCount === 1 ? "" : "s"} will be cleared.`
+      : `Remove ${name} from the roster?`)) return;

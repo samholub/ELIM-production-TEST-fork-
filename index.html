@@ -1080,12 +1080,17 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
     <div style={cardStyle}>
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <button onClick={handleToggle} style={{
-          width: 28, height: 28, minWidth: 28, borderRadius: 7,
+          width: 44, height: 44, minWidth: 44,
+          border: "none", background: "transparent",
+          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0, padding: 0
+        }}><div style={{
+          width: 28, height: 28, borderRadius: 7,
           border: `2px solid ${checked ? S.success : S.checkboxEmpty}`,
           background: checked ? S.success : "transparent",
-          cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-          transition: "all 0.15s ease", flexShrink: 0
-        }}>{checked && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}</button>
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transition: "all 0.15s ease"
+        }}>{checked && <span style={{ color: "#fff", fontSize: 14, fontWeight: 700 }}>✓</span>}</div></button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div onClick={() => hasExpandable && setExpanded(!expanded)} style={{
             color: checked ? S.textMuted : isUnassigned ? S.textDim : S.text,
@@ -1193,7 +1198,10 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
   };
 
   const removeMember = (name) => {
-    if (!confirm(`Remove ${name} from the roster? Their task assignments will be cleared.`)) return;
+    const assignCount = assignments ? Object.values(assignments).filter(v => v === name).length : 0;
+    if (!confirm(assignCount > 0
+      ? `Remove ${name} from the roster? Their ${assignCount} task assignment${assignCount === 1 ? "" : "s"} will be cleared.`
+      : `Remove ${name} from the roster?`)) return;
     setRoster(roster.filter(r => r.name !== name));
     // Clear all task assignments belonging to the removed member
     if (assignments && setAssignments) {
@@ -2609,6 +2617,15 @@ function ElimProductionApp() {
     return () => window.removeEventListener('elim-sync-status', handler);
   }, []);
 
+  const [offline, setOffline] = useState(false);
+  useEffect(() => {
+    if (!_fb) return;
+    const connRef = firebase.database().ref('.info/connected');
+    const handler = (snap) => setOffline(snap.val() === false);
+    connRef.on('value', handler);
+    return () => connRef.off('value', handler);
+  }, []);
+
   // Derive running from timer state
   const running = !!timerState.startedAt;
   const targetSeconds = timerState.targetMinutes ? timerState.targetMinutes * 60 : null;
@@ -2808,7 +2825,7 @@ function ElimProductionApp() {
     autoStoppedRef.current = true;
   }, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
 
-  const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8;
+  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
 
   const titles = {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
@@ -2867,6 +2884,11 @@ function ElimProductionApp() {
         ) : null}
       />
       <div style={{ height: "calc(48px + env(safe-area-inset-top, 0px))" }} />
+      {offline && (
+        <div style={{ position: "fixed", top: "calc(48px + env(safe-area-inset-top, 0px))", left: 0, right: 0, zIndex: 45, background: "rgba(245,158,11,0.15)", borderBottom: "1px solid rgba(245,158,11,0.3)", padding: "6px 16px", textAlign: "center", fontSize: 13, color: "#FBBF24", fontWeight: 600, fontFamily: S.sans, backdropFilter: "blur(8px)" }}>
+          Offline — changes saved locally
+        </div>
+      )}
       <div ref={contentRef} style={{ maxWidth: 600, margin: "0 auto" }}>
         {view === "dashboard" && <DashboardView onNavigate={navigate} checks={checks} totalItems={totalItems} assignments={assignments} currentUser={currentUser} elapsed={elapsed} running={running} setRunning={setRunning} teamMembers={teamMembers} history={history} remaining={remaining} targetSeconds={targetSeconds} onSetTarget={setTarget} allItems={allItems} />}
         {view === "checklist" && <ChecklistView {...sharedProps} {...checklistProps} elapsed={elapsed} running={running} setRunning={setRunning} initialFilter={checklistFilter} noAutoExpand={true} />}
