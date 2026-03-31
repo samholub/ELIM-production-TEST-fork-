@@ -1,0 +1,56 @@
+Edit 1: Remove "Coming Soon" section from Settings
+Find and delete this entire block from SettingsView:
+javascript      {/* Coming Soon */}
+      <div style={{ fontSize: 14, fontWeight: 700, color: S.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginTop: 24, marginBottom: 8 }}>Coming Soon</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {[
+          { icon: "📦", title: "Equipment", subtitle: "Inventory & status" },
+          { icon: "🛒", title: "Purchases", subtitle: "Want / need list" },
+        ].map(item => (
+          <div key={item.title} style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+            background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, opacity: 0.5
+          }}>
+            <span style={{ fontSize: 20 }}>{item.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{item.title}</div>
+              <div style={{ fontSize: 12, color: S.textMuted }}>Coming soon</div>
+            </div>
+          </div>
+        ))}
+      </div>
+Edit 2: Delete the PlaceholderView component
+Find and delete:
+javascriptfunction PlaceholderView({ icon, title, description }) {
+  return (
+    <div style={{ padding: "16px", textAlign: "center" }}>
+      <div style={{ padding: "48px 20px" }}>
+        <div style={{ fontSize: 48, marginBottom: 16, opacity: 0.4 }}>{icon}</div>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: S.text, marginBottom: 8 }}>{title}</h3>
+        <p style={{ color: S.textMuted, fontSize: 14, lineHeight: 1.6, maxWidth: 320, margin: "0 auto" }}>{description}</p>
+      </div>
+    </div>
+  );
+}
+Edit 3: Remove dead routes from main render
+Find:
+javascript        {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
+        {view === "repairs" && <RepairsView />}
+        {view === "purchases" && <PlaceholderView icon="🛒" title="Purchase List" description="Want/need purchase tracking coming in a future update." />}
+Replace with:
+javascript        {view === "repairs" && <RepairsView />}
+Edit 4: Remove dead route titles
+Find:
+javascript  const titles = {
+    dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
+    "crew-tasks": checklistFilter === "__unassigned__" ? "Unassigned Tasks" : checklistFilter ? `${checklistFilter}'s Tasks` : "Crew Tasks",
+    "power-seq": "Power Sequence", "io-list": "I/O Line List", network: "Signal Flow",
+    inventory: "Equipment", repairs: "Repairs", purchases: "Purchases", settings: "Settings",
+  };
+Replace with:
+javascript  const titles = {
+    dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
+    "crew-tasks": checklistFilter === "__unassigned__" ? "Unassigned Tasks" : checklistFilter ? `${checklistFilter}'s Tasks` : "Crew Tasks",
+    "power-seq": "Power Sequence", "io-list": "I/O Line List", network: "Signal Flow",
+    repairs: "Repairs", settings: "Settings",
+  };
