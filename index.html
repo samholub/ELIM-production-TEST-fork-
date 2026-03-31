@@ -649,10 +649,9 @@ const POWER_SEQUENCE = [
 ];
 
 const DASHBOARD_CARDS = [
-  { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
   { id: "io-list", icon: "🎚️", title: "I/O Line List", subtitle: "Inputs & routing" },
+  { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
   { id: "network", icon: "🌐", title: "Signal Flow", subtitle: "Network diagram" },
-  { id: "repairs", icon: "🔧", title: "Repairs", subtitle: "Pending maintenance" },
 ];
 
 const ALL_ITEMS = CHECKLIST_DATA.flatMap(s => s.items.map(i => ({ ...i, section: s })));
@@ -2347,169 +2346,6 @@ function SignalFlowView() {
   );
 }
 
-const DEFAULT_REPAIRS = [
-  { id: "r1", item: "LED Wall Panel", issue: "Dead cells / pixels on 2 panels", priority: "high" },
-  { id: "r2", item: "CAT6 Cables", issue: "Check and label all cable runs", priority: "medium" },
-  { id: "r3", item: "Stage Box (DL251)", issue: "Intermittent signal on input 8", priority: "high" },
-  { id: "r4", item: "In-ear transmitters", issue: "Battery contacts need cleaning", priority: "low" },
-  { id: "r5", item: "USB-C Adapters", issue: "Need backup adapters (2×)", priority: "medium" },
-  { id: "r6", item: "Speaker Cables", issue: "Inspect for damage, replace if frayed", priority: "medium" },
-];
-
-function RepairsView() {
-  const [repairs, setRepairs] = useState(DEFAULT_REPAIRS);
-  const loaded = true;
-  const [editing, setEditing] = useState(false);
-  const [confirmingReset, setConfirmingReset] = useState(false);
-  const [search, setSearch] = useState("");
-
-  const priorityColors = { high: "#EF4444", medium: "#F59E0B", low: "#5CB87A" };
-  const priorityLabels = { high: "Urgent", medium: "Soon", low: "Low" };
-
-  if (!loaded) return <div style={{ padding: "16px", textAlign: "center", color: S.textMuted }}>Loading repairs...</div>;
-
-  const filtered = search.trim()
-    ? repairs.filter(r => r.item.toLowerCase().includes(search.toLowerCase()) || r.issue.toLowerCase().includes(search.toLowerCase()))
-    : repairs;
-
-  const updateRepair = (id, field, value) => {
-    setRepairs(repairs.map(r => r.id === id ? { ...r, [field]: value } : r));
-  };
-
-  const addRepair = () => {
-    const newId = "r" + Date.now();
-    setRepairs([...repairs, { id: newId, item: "New Item", issue: "Describe the issue", priority: "medium" }]);
-  };
-
-  const removeRepair = (id) => {
-    setRepairs(repairs.filter(r => r.id !== id));
-  };
-
-  const resetToDefaults = () => {
-    setRepairs(JSON.parse(JSON.stringify(DEFAULT_REPAIRS)));
-    setConfirmingReset(false);
-    setEditing(false);
-  };
-
-  return (
-    <div style={{ padding: "12px 16px 80px" }}>
-      {/* Search + Edit/Reset controls */}
-      <div style={{ marginBottom: 12 }}>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search repairs..."
-          style={{
-            width: "100%", padding: "9px 14px", borderRadius: 8, fontSize: 14,
-            background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
-            color: S.text, fontFamily: S.sans, outline: "none", marginBottom: 8,
-            boxSizing: "border-box"
-          }}
-        />
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button onClick={() => setEditing(!editing)} style={{
-            flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-            cursor: "pointer", fontFamily: S.sans,
-            background: editing ? S.accentGlow : "rgba(255,235,210,0.04)",
-            border: `1px solid ${editing ? S.accentBorder : S.cardBorder}`,
-            color: editing ? S.accentText : S.textMuted
-          }}>{editing ? "✓ Done Editing" : "✏️ Edit Repairs"}</button>
-          {confirmingReset ? (
-            <>
-              <button onClick={resetToDefaults} style={{
-                padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                cursor: "pointer", fontFamily: S.sans,
-                background: "rgba(232,93,93,0.15)", border: "1px solid rgba(232,93,93,0.3)",
-                color: "#E88A8A"
-              }}>Confirm Reset</button>
-              <button onClick={() => setConfirmingReset(false)} style={{
-                padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
-                fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
-                border: `1px solid ${S.cardBorder}`, color: S.textMuted
-              }}>✕</button>
-            </>
-          ) : (
-            <button onClick={() => setConfirmingReset(true)} style={{
-              padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
-              fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
-              border: `1px solid ${S.cardBorder}`, color: S.textMuted
-            }}>Reset to Defaults</button>
-          )}
-        </div>
-        <div style={{ fontSize: 13, color: S.textMuted, marginTop: 8 }}>
-          {filtered.length} {filtered.length === 1 ? "item" : "items"}{search && repairs.length !== filtered.length ? ` of ${repairs.length}` : ""}
-        </div>
-      </div>
-
-      {filtered.map(r => (
-        <div key={r.id} style={{
-          background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 12,
-          padding: "14px 16px", marginBottom: 8, borderLeft: `3px solid ${priorityColors[r.priority]}`
-        }}>
-          {editing ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <input
-                  value={r.item}
-                  onChange={e => updateRepair(r.id, "item", e.target.value)}
-                  style={{
-                    flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 14, fontWeight: 600,
-                    background: "rgba(255,235,210,0.06)", border: `1px solid ${S.cardBorder}`,
-                    color: S.text, fontFamily: S.sans, outline: "none"
-                  }}
-                />
-                <select
-                  value={r.priority}
-                  onChange={e => updateRepair(r.id, "priority", e.target.value)}
-                  style={{
-                    padding: "6px 8px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-                    background: `${priorityColors[r.priority]}15`, border: `1px solid ${priorityColors[r.priority]}40`,
-                    color: priorityColors[r.priority], fontFamily: S.sans, cursor: "pointer", outline: "none"
-                  }}
-                >
-                  <option value="high">Urgent</option>
-                  <option value="medium">Soon</option>
-                  <option value="low">Low</option>
-                </select>
-                <button onClick={() => removeRepair(r.id)} style={{
-                  padding: "6px 10px", borderRadius: 6, fontSize: 14, cursor: "pointer",
-                  background: "rgba(232,93,93,0.1)", border: "1px solid rgba(232,93,93,0.25)",
-                  color: "#E88A8A", fontFamily: S.sans
-                }}>✕</button>
-              </div>
-              <input
-                value={r.issue}
-                onChange={e => updateRepair(r.id, "issue", e.target.value)}
-                style={{
-                  width: "100%", padding: "6px 10px", borderRadius: 6, fontSize: 13,
-                  background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
-                  color: S.textMuted, fontFamily: S.sans, outline: "none", boxSizing: "border-box"
-                }}
-              />
-            </div>
-          ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, color: S.text }}>{r.item}</div>
-                <span style={{ fontSize: 11, fontWeight: 600, color: priorityColors[r.priority], background: `${priorityColors[r.priority]}15`, padding: "2px 8px", borderRadius: 4 }}>{priorityLabels[r.priority]}</span>
-              </div>
-              <div style={{ fontSize: 13, color: S.textMuted, lineHeight: 1.5 }}>{r.issue}</div>
-            </>
-          )}
-        </div>
-      ))}
-
-      {editing && !search && (
-        <button onClick={addRepair} style={{
-          width: "100%", padding: "12px", borderRadius: 10, fontSize: 14, fontWeight: 600,
-          cursor: "pointer", fontFamily: S.sans, background: "rgba(255,235,210,0.03)",
-          border: `1px dashed ${S.cardBorder}`, color: S.textMuted, marginTop: 4
-        }}>+ Add Repair</button>
-      )}
-    </div>
-  );
-}
 
 
 // ═══════════════════════════════════════════
@@ -2700,11 +2536,9 @@ function ElimProductionApp() {
   useEffect(() => {
     window.storage.delete("elim3-checklist-data").catch(() => {});
     window.storage.delete("elim3-io-config").catch(() => {});
-    window.storage.delete("elim3-repairs").catch(() => {});
     _ls.del("elim_elim3-checklist-data");
     _ls.del("elim_checklist_version");
     _ls.del("elim_elim3-io-config");
-    _ls.del("elim_elim3-repairs");
   }, []);
 
   // Derive team lists from roster
@@ -2801,7 +2635,7 @@ function ElimProductionApp() {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
     "crew-tasks": checklistFilter === "__unassigned__" ? "Unassigned Tasks" : checklistFilter ? `${checklistFilter}'s Tasks` : "Crew Tasks",
     "power-seq": "Power Sequence", "io-list": "I/O Line List", network: "Signal Flow",
-    repairs: "Repairs", settings: "Settings",
+    settings: "Settings",
   };
 
   if (!loaded) return (
@@ -2868,7 +2702,6 @@ function ElimProductionApp() {
         {view === "io-list" && <IOListView />}
         {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} onDeleteHistory={deleteHistory} />}
         {view === "network" && <SignalFlowView />}
-        {view === "repairs" && <RepairsView />}
       </div>
     </div>
   );
