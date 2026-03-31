@@ -1,0 +1,185 @@
+Fix 1: _pendingWrites never cleared on final retry failure
+Severity: Critical | Complexity: One line
+Find this block in storage.set's catch handler (the else branch after all retries exhausted):
+javascript              } else {
+                window.dispatchEvent(new CustomEvent('elim-sync-status', { detail: { status: 'error', key } }));
+              }
+Replace with:
+javascript              } else {
+                _pendingWrites.delete(key);
+                window.dispatchEvent(new CustomEvent('elim-sync-status', { detail: { status: 'error', key } }));
+              }
+That's it for Fix 1. Without this, a single WiFi drop permanently blinds that device to remote updates for the failed key.
+
+Fix 2: Field-level merging (4 edits)
+Edit 2A: Normalize values in _startListener
+Firebase will return native objects after migration. The useStorage hook expects JSON strings. Normalize on the way in.
+Find:
+javascript          if (!_pendingWrites.has(key)) {
+            _ls.set('elim_' + key, val);
+            window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: val } }));
+Replace with:
+javascript          if (!_pendingWrites.has(key)) {
+            var normalized = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
+            _ls.set('elim_' + key, normalized);
+            window.dispatchEvent(new CustomEvent('elim-sync', { detail: { key, value: normalized } }));
+Edit 2B: Normalize values in storage.get
+Find (inside storage.get, the Firebase success path):
+javascript            if (snap.exists()) {
+              const val = snap.val();
+              _ls.set('elim_' + key, val);
+              return { key, value: val, shared: !!shared };
+            }
+Replace with:
+javascript            if (snap.exists()) {
+              const val = snap.val();
+              const normalized = (typeof val === 'object' && val !== null) ? JSON.stringify(val) : val;
+              _ls.set('elim_' + key, normalized);
+              return { key, value: normalized, shared: !!shared };
+            }
+Edit 2C: Add storage.merge method
+Find (the boundary between set and delete):
+javascript        return { key, value, shared: !!shared };
+      },
+      async delete(key, shared) {
+Replace with:
+javascript        return { key, value, shared: !!shared };
+      },
+      async merge(key, fields, shared) {
+        const fbKey = key.replace(/\./g, '_');
+        // Build full merged value from localStorage cache
+        const current = _ls.get('elim_' + key);
+        let fullObj = {};
+        try {
+          const parsed = current ? JSON.parse(current) : {};
+          if (typeof parsed === 'object' && !Array.isArray(parsed)) fullObj = { ...parsed };
+        } catch(e) {}
+        for (const k of Object.keys(fields)) {
+          if (fields[k] === null || fields[k] === undefined) delete fullObj[k];
+          else fullObj[k] = fields[k];
+        }
+        _ls.set('elim_' + key, JSON.stringify(fullObj));
+        _startListener(key);
+        if (_fb) {
+          _pendingWrites.add(key);
+          const attemptMerge = (attemptsLeft, delay) => {
+            // Check current Firebase format before choosing write strategy
+            _fb.child(fbKey).get().then(snap => {
+              const currentVal = snap.exists() ? snap.val() : null;
+              // If node is a string (old format) or doesn't exist, write full native object to migrate
+              // If node is already a native object, use .update() for field-level merge
+              return (typeof currentVal === 'string' || currentVal === null)
+                ? _fb.child(fbKey).set(fullObj)
+                : _fb.child(fbKey).update(fields);
+            }).then(() => {
+              _pendingWrites.delete(key);
+              window.dispatchEvent(new CustomEvent('elim-sync-status', { detail: { status: 'ok' } }));
+            }).catch((e) => {
+              console.warn('Firebase merge failed:', e.message, '— retries left:', attemptsLeft);
+              if (attemptsLeft > 0) {
+                setTimeout(() => attemptMerge(attemptsLeft - 1, Math.min(delay * 2, 30000)), delay);
+              } else {
+                _pendingWrites.delete(key);
+                window.dispatchEvent(new CustomEvent('elim-sync-status', { detail: { status: 'error', key } }));
+              }
+            });
+          };
+          attemptMerge(4, 2000);
+        }
+        return { key, value: JSON.stringify(fullObj), shared: !!shared };
+      },
+      async delete(key, shared) {
+Edit 2D: Smart diff in useStorage's save + prevRef tracking
+This is the key behavioral change. When save is called with an object, it diffs against the previous value and routes partial updates through storage.merge. Full replacements (resets, arrays, scalars) still use storage.set. No call-site changes needed.
+Find the entire useStorage function:
+javascriptfunction useStorage(key, initial, shared = true) {
+  const [val, setVal] = useState(initial);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    window.storage.get(key, shared).then(r => {
+      if (r?.value) {
+        try {
+          const parsed = JSON.parse(r.value);
+          if (parsed != null) setVal(parsed);
+        } catch(err) {}
+      }
+    }).catch(() => {}).finally(() => setLoaded(true));
+    // Real-time sync: update state when Firebase pushes changes from other devices
+    const handler = (e) => {
+      if (e.detail?.key === key && e.detail?.value) {
+        try {
+          const parsed = JSON.parse(e.detail.value);
+          if (parsed != null) setVal(parsed);
+        } catch(err) {}
+      }
+    };
+    window.addEventListener('elim-sync', handler);
+    return () => window.removeEventListener('elim-sync', handler);
+  }, []);
+  const save = useCallback((v) => {
+    setVal(v);
+    window.storage.set(key, JSON.stringify(v), shared).catch(() => {});
+  }, [key, shared]);
+  return [val, save, loaded];
+}
+Replace with:
+javascriptfunction useStorage(key, initial, shared = true) {
+  const [val, setVal] = useState(initial);
+  const [loaded, setLoaded] = useState(false);
+  const prevRef = useRef(initial);
+  useEffect(() => {
+    window.storage.get(key, shared).then(r => {
+      if (r?.value) {
+        try {
+          const parsed = JSON.parse(r.value);
+          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
+        } catch(err) {}
+      }
+    }).catch(() => {}).finally(() => setLoaded(true));
+    // Real-time sync: update state when Firebase pushes changes from other devices
+    const handler = (e) => {
+      if (e.detail?.key === key && e.detail?.value) {
+        try {
+          const parsed = JSON.parse(e.detail.value);
+          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
+        } catch(err) {}
+      }
+    };
+    window.addEventListener('elim-sync', handler);
+    return () => window.removeEventListener('elim-sync', handler);
+  }, []);
+  const save = useCallback((v) => {
+    const prev = prevRef.current;
+    prevRef.current = v;
+    setVal(v);
+    // Smart merge: if both old and new values are plain objects,
+    // diff them and write only changed fields via storage.merge.
+    // Full replacements (resets to {}, arrays, scalars) use storage.set.
+    if (typeof v === 'object' && v !== null && !Array.isArray(v) &&
+        typeof prev === 'object' && prev !== null && !Array.isArray(prev)) {
+      const fields = {};
+      let changeCount = 0;
+      for (const k of Object.keys(v)) {
+        if (v[k] !== prev[k]) { fields[k] = v[k]; changeCount++; }
+      }
+      for (const k of Object.keys(prev)) {
+        if (!(k in v)) { fields[k] = null; changeCount++; }
+      }
+      const totalKeys = Math.max(Object.keys(v).length, Object.keys(prev).length);
+      if (changeCount > 0 && changeCount < totalKeys) {
+        window.storage.merge(key, fields, shared).catch(() => {});
+        return;
+      }
+    }
+    window.storage.set(key, JSON.stringify(v), shared).catch(() => {});
+  }, [key, shared]);
+  return [val, save, loaded];
+}
+
+How it works end-to-end
+When a volunteer checks a box, toggleCheck calls setChecks({ ...checks, [itemId]: true }). The save callback diffs against prevRef and sees one field changed out of 59. It routes to storage.merge({ [itemId]: true }) instead of storage.set(fullObject).
+storage.merge reads the Firebase node. If it's still in the old JSON string format (first call after deploy), it writes the full native object via .set() — migrating the format. On all subsequent calls, the node is a native object, so it uses .update({ [itemId]: true }) — writing only the changed field.
+If two devices are offline and check different tasks, Device A's .update({ ps-1: true }) and Device B's .update({ sb-1: true }) both land independently without clobbering each other.
+Full-object resets like setChecks({}) still use storage.set because the diff detects all keys were deleted (not a partial change).
+Deploy strategy
+Deploy normalization (Edits 2A, 2B) and Fix 1 first, verify for one service. Then deploy the full set. The normalization ensures all devices can read both formats before any device starts writing native objects. Since there's no service worker, a hard refresh picks up new code immediately — but if a volunteer has a stale tab, the normalization protects against format mismatch.
