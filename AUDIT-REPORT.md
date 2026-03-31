@@ -1,369 +1,361 @@
 # ELIM Production App — Zero-Principles Audit Report
-**v5.6.0 · 2,377 lines · Audited 2026-03-28**
+
+**Auditor:** Principal Solutions Architect (AI-assisted)
+**Date:** 2026-03-31
+**Codebase version:** v5.9.0 (per in-app label, line 1282 of `index.html`)
+**Scope:** Full read of `index.html` (~2,834 lines), `.cursorrules`, `PROJECT-BRIEF.md`, `BACKLOG.md`, `ELIM-PROJECT.md`, `OPEN-ITEMS.md`
 
 ---
 
-## Acknowledged Once
+## Acknowledged Deliberate Decisions (One Line Each)
 
-- Firebase rules are fully open: intentional for a small trusted team.
-- API key in source HTML: normal for Firebase client-side apps; keys are not secret.
-- No authentication: intentional — volunteers select name on launch.
-- Single-file architecture: intentional — zero build step, single deploy artifact.
+- **Firebase rules fully open** — intentional for a small trusted team; risk documented in PROJECT-BRIEF.md.
+- **API key in source HTML** — normal for Firebase client-side apps; keys are not secrets.
+- **No authentication** — intentional; volunteers select name on launch.
+- **Single-file architecture** — intentional; zero build step, single deploy artifact.
 
 ---
 
 ## 1. Fragile Assumptions
 
-### 1.1 Offline Conflict: Last Write Silently Wins — and the Loser Is Local Changes
+### 1.1 `useStorage` Sync: Last-Write-Wins with a Silent Freeze Bug
 
-**What it is.** When a Firebase write fails (network drop, venue WiFi hiccup), `window.storage.set` logs a console warning but returns successfully. `localStorage` has the new value. Firebase has the old value. The real-time listener (`_fb.child(key).on('value', ...)`) is still active, and when Firebase next propagates any state (from a different device's write, or just on reconnect), it fires `elim-sync` with its stale version. `useStorage`'s handler calls `setVal(JSON.parse(e.detail.value))` unconditionally — replacing React state with Firebase's older value. The locally-saved change is silently discarded.
+**What:** The `_pendingWrites` Set tracks keys with in-flight Firebase writes and suppresses incoming `elim-sync` events for those keys. On successful write, the key is removed from `_pendingWrites`. On final retry failure (after 4 retries), the error event is dispatched — but the key is **never removed** from `_pendingWrites`.
 
-**Why it matters.** A volunteer checks off "Power on Stage Box" at a venue with spotty WiFi. Firebase write fails. Thirty seconds later, the Firebase listener fires (triggered by another device's unrelated write), and the checkbox goes back to unchecked on their screen. They don't know if this is a real state or a sync artifact. They check it again. Or they walk away thinking it's done when it isn't. Under time pressure, this confusion compounds.
+**Why it matters:** If a write fails all retries (spotty venue WiFi), the key stays in `_pendingWrites` permanently (until page reload). From that point forward, the Firebase listener silently ignores all remote updates for that key. The device is frozen on stale data for that key with no user-visible indication. Other devices' changes to that key are invisible.
 
-**Concrete fix.** After a failed Firebase write, mark the key as "pending sync" in memory (a simple `Set`). On any future `elim-sync` event for that key, if the key is still pending, compare timestamps or ignore the incoming event until the local write succeeds (add a retry with `setTimeout`). At minimum: if a Firebase write fails, re-attempt once after 5 seconds. If that fails too, surface a toast: "Changes saved locally — syncing when connection restores."
+**Concrete scenario:** Sam checks a box while WiFi drops. Write retries exhaust. Sam's device shows the box checked. WiFi comes back. Tyler checks the same box from his phone. Sam's device never sees Tyler's update for `elim3-checks` because the key is stuck in `_pendingWrites`. Sam's next write to that key will overwrite Tyler's state.
 
----
+**Fix:** In the final `.catch` handler of `attemptWrite` (after all retries exhausted), add `_pendingWrites.delete(key)`. The sync-status error event already fires — the key just needs to be unfrozen so future remote updates can flow in.
 
-### 1.2 Firebase Re-seeding on Reconnect Can Clobber Newer Data
+### 1.2 Offline Writes: No Conflict Resolution, No Merge
 
-**What it is.** In `storage.get`, the fallback path reads:
-```javascript
-const cached = _ls.get('elim_' + key);
-if (cached !== null) {
-  if (_fb) _fb.child(fbKey).set(cached).catch(() => {});
-  return { key, value: cached, shared: !!shared };
-}
-```
-This path runs when Firebase fails (the outer `try/catch`). If Device A goes offline, makes changes (written to localStorage only), then comes back online, the very next `storage.get` call for that key — triggered by a navigation or re-mount — will push localStorage's value to Firebase, potentially overwriting changes Device B made while Device A was offline.
+**What:** When two devices edit the same storage key while one or both are offline, whichever device writes to Firebase last wins. The entire value (full checks object, full assignments object, etc.) is overwritten — not merged at the field level.
 
-**Why it matters.** In practice, `useStorage` only calls `get` once on mount. After mount, updates come through the `elim-sync` listener. So this re-seed only fires at mount time (app load). If Device A goes offline, closes the app, makes changes (which can't happen if app is closed), and reopens... the changes weren't made, so no issue. The real scenario: Device A has an old localStorage cache from last week, goes to a new venue with a different network, Firebase is briefly unavailable on first load, localStorage cache is pushed to Firebase — overwriting all the changes made since last week. This is a data regression risk.
+**Why it matters:** If device A checks tasks 1-5 offline and device B checks tasks 6-10 offline, when both reconnect, one device's 5 checks are silently lost. Firebase's `.set()` replaces the entire node.
 
-**Concrete fix.** Never push localStorage to Firebase unconditionally in `get`. Remove the re-seed push (`if (_fb) _fb.child(fbKey).set(cached)`) from the error fallback path. The only place localStorage should seed Firebase is intentionally, via explicit reset. If the app needs to recover stale localStorage data, make it opt-in, not automatic.
+**Concrete scenario:** Two volunteers work different sections while venue WiFi flickers. One reconnects first and pushes their checks. The second reconnects and overwrites the first's checks with their own copy (which lacks the first volunteer's changes).
 
----
+**Fix:** For object-valued keys (checks, assignments, notes), write individual fields using Firebase's `.update()` instead of `.set()` on the full object. This way `checks/ps-1 = true` and `checks/sb-1 = true` are independent writes that don't clobber each other. This requires restructuring how `storage.set` handles object values vs. scalar values.
 
-### 1.3 Checked Task Counter Overcounts After Task Deletion
+### 1.3 Canonical Source Pattern: I/O, Repairs, and Checklist Edits Are Ephemeral
 
-**What it is.** When a task is deleted via edit mode, its ID is removed from `checklistData` but its entry in `elim3-checks` (and `elim3-assign`, `elim3-notes`, etc.) is never cleaned up. `totalChecked` is computed as `Object.values(checks).filter(Boolean).length` — it counts ALL checked IDs in the Firebase store, including deleted ones. `totalItems` counts tasks in the live `checklistData`. These two numbers can diverge.
+**What:** Lines 2652–2660 run on every app load and actively **delete** `elim3-checklist-data`, `elim3-io-config`, and `elim3-repairs` from Firebase and localStorage. Meanwhile, `IOListView` and `RepairsView` use plain `useState` (not `useStorage`), and `checklistData` in the main app is `useState(CHECKLIST_DATA)`.
 
-**Why it matters.** After deleting two already-checked tasks: dashboard shows "61/59 tasks" and 103%. Progress bar overflows its container visually. Volunteers see impossible state and lose trust in the app.
+**Why it matters:** The in-app edit modes for I/O Line List, Repairs, and Checklist tasks give the user a fully functional editing UI — but all edits are lost on page refresh, on navigation away from the view (component unmount), and never sync to other devices. This is a fake-persistence trap. A user who carefully edits the I/O list will lose everything the moment they navigate away.
 
-**Concrete fix.** Compute `totalChecked` by intersecting with live task IDs: `const liveIds = new Set(allItems.map(i => i.id)); const totalChecked = Object.values(checks).filter((v, _, arr) => v).length` won't help — use `allItems.filter(i => checks[i.id]).length` everywhere totalChecked is needed. Also, on task deletion in `removeTask`, delete the orphaned entries from `checks`, `assignments`, `taskNotes`, and `completions`.
+**Concrete scenario:** Sam edits the I/O line list on-site to correct a channel label. He navigates to the checklist to verify something. He comes back to the I/O list — his edits are gone. The component remounted with `DEFAULT_IO_LINE_LIST`.
 
----
+**Clarification needed:** The cleanup on lines 2652–2660 appears to be intentional (forcing the code constants to always be canonical). But it creates a contradiction: the edit UI exists and works in-session, but nothing persists. Either the edit UI should be removed (read-only reference), or the data should persist via `useStorage`.
 
-### 1.4 `newWeek` Reset Is Not Atomic — Partial State Is Possible
+### 1.4 No Data Migration Path
 
-**What it is.** `newWeek` executes four sequential state saves: `setHistory`, `setChecks`, `setCompletions`, `setTimerState`. Each calls `window.storage.set` which writes localStorage synchronously but Firebase asynchronously. If the phone sleeps, loses connection, or the user force-closes the app between the first and fourth write, the state is partially reset. Specifically: history is saved (sealing the old week's data) but `elim3-checks` still contains all the old checkmarks.
+**What:** When `CHECKLIST_DATA` changes in code (tasks added, removed, IDs changed) and the app is redeployed, the live `elim3-checks` and `elim3-assign` objects in Firebase still reference the old task IDs. There is no migration function to reconcile old data with a new checklist structure.
 
-**Why it matters.** On next load, `loaded` becomes `true` and the app renders with the new history entry (implying a fresh week started) but all 59 checkboxes still checked. The crew sees "100% complete" on what looks like a new week. They proceed under false confidence.
+**Why it matters:** Orphaned data accumulates silently. Checks for deleted tasks remain in Firebase forever. Assignments for renamed task IDs persist but no longer match any task. Over time, the checks/assignments objects grow with dead keys. More critically, if a reset is done to pick up the new structure, assignments, notes, and photos are preserved — but they're keyed to old task IDs that may no longer exist in the new structure.
 
-**Concrete fix.** Either: (a) write all four keys in a single JSON transaction — create a composite key `elim3-reset-state` containing the week boundary snapshot, and have the app interpret that on next load; or (b) add a `pendingReset: true` flag to Firebase before any clearing, and on load, if `pendingReset` is set, complete the reset before rendering. The simplest viable approach: batch the writes so they go to localStorage first synchronously and Firebase second, and treat any inconsistency as "complete the reset" rather than "undo the reset."
+**Fix:** The schema versioning approach in BACKLOG.md Priority 4 is correct. Add `elim3-schema-version` and a `runMigrations()` function on load that can remap old task IDs to new ones, prune orphaned keys, and handle structural changes without requiring a full reset.
 
----
+### 1.5 Base64 Photos: Unbounded Growth on a Single Firebase Key
 
-### 1.5 Base64 Photos Will Eventually Brick Initial Load
+**What:** All photos are stored as a single JSON object under `elim3-photos`. Photos persist across weekly resets (by design). Each photo is ~30–80KB as a base64 string. Firebase's `.on('value')` and `.get()` download the **entire** `elim3-photos` node on every page load and every sync event.
 
-**What it is.** All photos across all time are stored under a single Firebase key `elim3-photos` as one JSON object: `{ "lw1-assembly": "data:image/jpeg;base64,...", "sb1-position": "data:image/jpeg;base64,...", ... }`. Every app load reads this entire blob. The `!loaded` guard holds the full UI until all 9 storage keys resolve — including photos.
+**Why it matters:** After 52 weeks at ~10 photos/week, the photos blob is ~26MB. After 2 years, ~52MB. Firebase Realtime Database serves the full node as a single JSON payload. A 50MB JSON string requires 3–5× memory to parse, pushing old phones toward the ~150MB heap limit. Initial load time degrades linearly with photo count. The `loaded` gate (line 2750) blocks rendering until photos finish loading, so every user waits for the full photo download before seeing anything.
 
-A single photo at 800×600 JPEG 70% is roughly 80–150KB. Five photos per setup × 52 weeks = 260 photos × 100KB = ~26MB of base64 strings. That is a 26MB Firebase read on every app open, from a phone on venue WiFi.
+**Storage math:** Firebase Spark plan allows 1GB storage. 52 weeks × 10 photos × 60KB avg = ~30MB/year. Storage isn't the immediate bottleneck — download time and memory are.
 
-Firebase Realtime DB has an undocumented but real per-node limit around 10–32MB for a single read. Once photos accumulate beyond that, `storage.get("elim3-photos")` will timeout or fail, and the app will be stuck on the loading spinner indefinitely.
+**Fix:** Either (a) move photos out of the real-time sync path and into Firebase Storage (separate service, URL-based), or (b) partition photos by date range or session and only load the current session's photos eagerly, with history photos loaded on demand.
 
-**Why it matters.** This is the only finding that predicts a hard failure with no graceful degradation. The app will simply stop loading.
+### 1.6 `newWeek` Reset Is Not Atomic
 
-**Concrete fix.** Two changes: (1) Remove photos from the `loaded` gate — render the app without photos, lazy-load them per-task when a task is expanded. (2) Shard photos by week or year (e.g., `elim3-photos-2026`) so the current week's photos are a small key. Long-term: archive photos older than 4 weeks to a separate key that is never loaded on startup.
+**What:** The `newWeek` function (lines 2598–2631) writes a `pending-reset` flag, then independently clears checks, completions, and timer state via separate `setChecks({})`, `setCompletions({})`, and `setTimerState({...})` calls. Each triggers an independent Firebase write via `useStorage`'s `save()`. There is no transaction or batched write.
 
----
+**Why it matters:** If the device loses connectivity or the user closes the tab mid-reset, the app could end up with checks cleared but history not updated (data loss), or completions cleared but checks still present (inconsistent state). The `pending-reset` flag mechanism is a good mitigation — on next load, the flag is detected and clears are re-run. But between the crash and the next load, the data is temporarily inconsistent and visible to all devices.
 
-### 1.6 No Migration Path for `CHECKLIST_DATA` Structural Changes
+**Actual risk:** Low-medium. The pending-reset flag handles the most likely failure mode (interrupted reset). But the flag itself is written to Firebase asynchronously, so a crash before the flag reaches Firebase AND localStorage would leave no trace that a reset was attempted.
 
-**What it is.** `elim3-checklist-data` in Firebase, once populated, is only updated by: (a) in-app edit mode, or (b) a manual reset that clears checks/completions/timer. There is no version field, no schema hash, no way to detect that the code's `CHECKLIST_DATA` has changed since the last reset.
+### 1.7 PWA Is Not a Functional PWA
 
-**Why it matters.** When new tasks are added to the code constant (e.g., the three tasks in BACKLOG.md Priority 2), deploying the code does nothing to live Firebase state. The team will continue using the old checklist, missing the new tasks, until someone deliberately resets. The reset clears all progress. If it happens mid-week, that's lost data.
+**What:** The app has a manifest (base64 data URI, line 13) with `"icons": []` and `"display": "standalone"`. There is no service worker. No `navigator.serviceWorker.register()` call anywhere in the code.
 
-**Concrete fix.** Add a `version` string to `CHECKLIST_DATA` (e.g., `"v5.6.0"`). Store the version inside `elim3-checklist-data`. On app load, after reading `checklistData`, compare its version to the code constant's version. If they differ, surface a banner: "Checklist structure has been updated. Reset to apply changes — or continue with the current structure." Let the admin (Sam) choose.
+**Why it matters:** Without a service worker:
+- A browser refresh in a dead zone = dinosaur screen. The app requires network connectivity to load.
+- "Add to Home Screen" produces an icon-less shortcut that may not behave as a standalone app on all platforms.
+- There is no offline caching of the HTML, CDN scripts (React, Babel, Firebase), or fonts.
+- The manifest's `"icons": []` means iOS won't use a proper app icon, and Android won't show the install prompt.
+
+**Concrete scenario:** The venue WiFi drops 10 minutes into setup. A volunteer accidentally closes the browser tab (or the browser clears it from memory). They reopen — blank page. They have no access to the checklist, assignments, or any reference data until connectivity returns.
+
+**Fix:** Add a minimal service worker that caches `index.html` and the CDN dependencies on install. Cache-first strategy for the HTML, stale-while-revalidate for CDN scripts. This is listed in BACKLOG.md Priority 5 but should be elevated — it's a reliability issue, not a feature.
 
 ---
 
 ## 2. Data Resilience
 
-### 2.1 `elim-sync` Fire-and-Forget Creates State Thrashing Under Rapid Multi-Device Edits
+### 2.1 Cross-Key Consistency: No Transactional Guarantees
 
-**What it is.** Every Firebase listener fires `window.dispatchEvent(new CustomEvent('elim-sync', ...))` directly and synchronously in the listener callback. The `useStorage` handler calls `setVal(JSON.parse(...))` on every event with no debouncing.
+**What:** The 11 storage keys are independently read and written. Operations that span multiple keys (reset, task deletion, roster member removal) perform sequential independent writes with no rollback mechanism.
 
-When Device A checks three boxes quickly: Firebase receives three writes, fires three listener callbacks (on Device B), dispatches three `elim-sync` events, triggers three `setVal` calls on `elim3-checks`, causing three sequential re-renders of the full app tree on Device B.
+**Why it matters:** Task deletion (lines 1544–1555) independently updates `checklistData`, then `checks`, then `assignments`, then `taskNotes`, then `completions`. If the browser tab crashes between the `assignments` and `taskNotes` writes, the task is deleted from the checklist but its note persists as an orphan in Firebase. The orphan cleanup code is correct in structure but not resilient to partial execution.
 
-**Why it matters.** In React 18, `setVal` called inside native event handlers is batched, but `setVal` called inside `window.addEventListener` callbacks (async context) may not batch in all environments — particularly the CDN Babel/React 18 setup without the full scheduler. Under Babel standalone, React 18 auto-batching is less reliable. Three back-to-back re-renders of the full 2,000-line app tree with 59 task cards is measurable on an old phone.
+**Blast radius assessment:** Corruption of one key doesn't cascade to others — they're independent. A corrupted `elim3-checks` doesn't affect `elim3-assign`. The worst case is orphaned data (harmless but wasteful) or missing data for a key that should exist (user sees default state for that key). No key corruption can cause a white-screen crash because `useStorage` always falls back to the initial value.
 
-**Concrete fix.** Debounce the `elim-sync` handler in `useStorage` by 50ms. Collect all arriving sync events for a given key and apply only the last one. This collapses three rapid writes into a single re-render with no observable delay to the user.
+### 2.2 `JSON.parse(JSON.stringify())` Deep Clone: Low Risk for This Data Shape
 
----
+**What:** Used 8+ times throughout the codebase for deep cloning before mutations.
 
-### 2.2 `localStorage` Full = Silent Data Loss
+**Edge cases:**
+- `undefined` object values → silently dropped (keys vanish)
+- `Date` objects → become ISO strings (irreversible)
+- `NaN` → becomes `null`
+- Functions → silently dropped
+- Circular references → throws (unrecoverable crash)
 
-**What it is.** `_ls.set` catches `localStorage.setItem` errors silently:
-```javascript
-set(k,v) { try { localStorage.setItem(k,v); } catch(e) {} }
-```
-On iOS, `localStorage` quota is ~5-10MB. Each photo is added to the `elim3-photos` key, which is written to localStorage on every photo change. Once localStorage fills (entirely plausible with accumulated photos), all writes fail silently. `window.storage.set` still writes to Firebase, but the localStorage cache is stale. On next load (if Firebase fails or is slow), the app reads stale data.
+**Why it matters for THIS app:** The data structures are simple: strings, numbers, booleans, arrays of plain objects. No Date objects in the data model, no functions, no circular references. The `undefined` silently dropping is the only realistic concern — if a task field is explicitly set to `undefined` (rather than omitted), a deep clone would erase it. In practice this hasn't happened because task data comes from code constants with no undefined values.
 
-**Why it matters.** Silent data loss. The volunteer takes a reference photo, sees it on screen, later the localStorage write fails, the photo disappears on next load. No indication of what happened.
+**Fix:** Extract to `deepClone()` utility as planned in BACKLOG.md Priority 4 for readability and single point of change, but don't add complexity (e.g., structuredClone) unless a data shape change introduces Date objects or similar.
 
-**Concrete fix.** In `_ls.set`, catch the error and set a flag `window._lsFull = true`. In `useStorage`, check this flag and show a one-time toast: "Storage nearly full — photos may not persist offline." Not a perfect fix, but at least surfaces the condition.
+### 2.3 `_ls` localStorage Wrapper: Silent Failure Is the Wrong Default for Writes
 
----
+**What:** The `_ls.set()` method catches and swallows all errors. If localStorage is full (5MB quota on most browsers), writes fail silently.
 
-### 2.3 `JSON.parse("null")` Path Can Cause Crashes
+**Why it matters:** `elim3-photos` stores all photos as a JSON-serialized object in localStorage under `elim_elim3-photos`. As photos accumulate, this can exceed the 5MB localStorage quota. When that happens, `_ls.set()` silently fails. The photo appears saved (it's in React state and pushed to Firebase), but the localStorage cache is not updated. On next load, if Firebase is unreachable, the fallback to localStorage returns stale photo data. Not catastrophic, but the user's mental model ("I took a photo, it's saved") is violated.
 
-**What it is.** In `useStorage`:
-```javascript
-window.storage.get(key, shared).then(r => {
-  if (r?.value) setVal(JSON.parse(r.value));
-})
-```
-`r.value` is whatever comes back from `localStorage.getItem`. If Firebase stored `null` (which in Firebase means "node deleted") and that somehow got written to localStorage as the string `"null"` (which is truthy), then `JSON.parse("null")` = `null`. `setVal(null)` replaces e.g. `checks` with `null`. Any subsequent `Object.values(checks)` throws `TypeError: cannot convert undefined to object`.
+**Fix:** `_ls.set()` should catch quota errors specifically and surface them via a `console.warn` at minimum. For the `elim3-photos` key specifically, consider not caching in localStorage at all (Firebase is the source of truth for photos, and the base64 strings are the biggest localStorage consumers).
 
-**Why it matters.** Low probability but zero graceful handling. If `elim3-checks` gets set to `null` in Firebase (e.g., someone runs `firebase.delete()` on the database), the app crashes with a white screen on every device.
+### 2.4 Firebase Returning Null: Handled Correctly with One Gap
 
-**Concrete fix.** Guard against null: `const parsed = JSON.parse(r.value); if (parsed !== null && parsed !== undefined) setVal(parsed);` — or use a nullish coalescing fallback: `setVal(JSON.parse(r.value) ?? initial)`.
+**What:** The `storage.get()` function checks `snap.exists()` before using Firebase data. The `.on('value')` listener checks `val !== null && val !== undefined` before dispatching. `useStorage` catches all errors and falls back to the initial value.
 
----
+**The gap:** If someone (or a script) deletes a Firebase key entirely, the `.on('value')` listener fires with `val = null`, and the condition on line 92 (`if (val !== null && val !== undefined)`) prevents the sync event from dispatching. The local device retains its last known value and doesn't know the key was deleted. This is actually protective — an accidental Firebase key deletion doesn't wipe client state. But it also means there's no way to force-clear a key on all devices except by writing an explicit empty/default value.
 
-### 2.4 Orphaned Data in Supporting Keys Accumulates Forever
+### 2.5 `elim-sync` CustomEvent: No Debouncing, Potential State Thrashing
 
-**What it is.** Deleting a task in edit mode removes it from `checklistData` but leaves entries in `elim3-assign`, `elim3-notes`, `elim3-photos`, and `elim3-comp` for that task ID. Removing a person from the roster leaves their name as the value of any `elim3-assign` entries. Over time, both forms of orphan accumulate.
+**What:** Every Firebase `.on('value')` callback immediately dispatches an `elim-sync` CustomEvent. The `useStorage` handler calls `setVal()` on every event. There is no debouncing or batching.
 
-The assignment orphan is the more operationally painful one: removing "Taylor" from the roster still shows "Taylor" in the assignment dropdown for all tasks assigned to them (the `<select>` value shows it but it's not in the options list), causing the dropdown to appear blank/unset, looking like an unassigned task when it isn't.
+**Why it matters:** If 16 volunteers are all checking boxes simultaneously, `elim3-checks` receives rapid-fire updates. Each update triggers a full checks object replacement in every device's `useStorage` handler, causing a re-render cascade in `ElimProductionApp` and all children. React 18's automatic batching helps with synchronous updates, but Firebase callbacks are asynchronous — each one triggers a separate render cycle.
 
-**Concrete fix.** On task deletion, delete the corresponding keys from `checks`, `assignments`, `taskNotes`, `completions`. On roster member removal, reassign (or clear) all tasks assigned to that person's name before removing them.
+**Practical severity:** Low-medium. 16 concurrent checkbox toggles would generate 16 Firebase events within a few seconds. Each causes a full re-render of the checklist. On old phones, this could feel janky. Not data-corrupting, but a UX smoothness issue.
+
+### 2.6 RTDB Payload Size: Photos Are the Memory Bomb
+
+**What:** `elim3-photos` is a single Firebase node containing all photos as base64 strings. Firebase RTDB transfers the entire node on initial `.get()` and on every `.on('value')` update. The payload is a JSON-serialized string of the entire photos object.
+
+**Why it matters:** When any device adds a photo, every other device's Firebase listener receives the ENTIRE photos object (all photos for all tasks for all time). On a phone with 2GB RAM and a browser tab memory limit of ~150MB, a 30MB+ photos blob will cause parsing delays and potential tab crashes. Worse: the `loaded` gate blocks all rendering until photos finish loading.
+
+**Current trajectory:**
+- Week 1: ~500KB (10 photos × 50KB)
+- Week 26: ~13MB
+- Week 52: ~26MB
+- Week 104: ~52MB — probable tab crashes on budget phones
+
+**Fix:** This is the highest-priority architectural fix. Options: (a) Firebase Storage for photos with URLs in RTDB, (b) partition photos by session ID, (c) aggressive photo pruning on reset (only keep current session + reference photos).
 
 ---
 
 ## 3. Volunteer UX Failure Modes
 
-### 3.1 Task Deletion Has No Confirmation — and Syncs Instantly
+### 3.1 First-Time Volunteer: "What Do I Do?"
 
-**What it is.** In edit mode, a ✕ button appears next to every task. `onClick={() => removeTask(section.id, item.id)}` — immediate, no confirm, no undo. The deletion syncs to Firebase within ~1 second, where it overwrites all other devices.
+**What:** A new volunteer opens the app, selects their name, and sees the My Tasks view. If no tasks are assigned to them, they see "No tasks assigned to you yet" with a "View Full Checklist" button.
 
-**Why it matters.** The single most dangerous volunteer action in the app. A confused volunteer taps the pencil icon, sees the ✕ buttons, and accidentally taps one. The task is gone on all 16 devices. Recovery requires: Sam knowing the original task text from memory, re-creating it in edit mode, and re-syncing. If it was a task with notes or a reference photo, those are also gone.
+**Why it matters:** The volunteer now needs to: (1) understand they need to navigate to the full checklist, (2) find tasks relevant to them, (3) use the assignment dropdown to assign tasks to themselves. This is 3 steps of non-obvious interaction during a rushed 30-minute setup with no training. The likely outcome is the volunteer either assigns themselves random tasks or gives up and asks Sam.
 
-**Concrete fix.** Add a `window.confirm("Delete this task? This can't be undone.")` before `removeTask`. Crude, but it adds one confirmation for a destructive action. Better: add a 5-second undo toast that defers the Firebase write. Best (but requires more code): restrict edit mode entry — move it behind Settings or a passcode, removing it from the main checklist view entirely.
+**What should happen:** The team lead (Sam) assigns tasks before the setup. Assignments persist across resets. So in theory, the first-time experience only happens once per volunteer. But with volunteer turnover ("the app can't assume familiarity"), this is a recurring friction point.
 
----
+**Fix:** Add an onboarding hint on the empty My Tasks state: "Ask your team lead to assign you tasks, or tap below to see all tasks and pick some." The BACKLOG Priority 1 "All" assignment option would also help — communal tasks would show up for everyone.
 
-### 3.2 Edit Mode Is Visible and Accessible to All 16 Volunteers
+### 3.2 No Undo for Any Action
 
-**What it is.** The ✏️ button is always rendered in `ChecklistView` because `setChecklistData` is always passed from `ElimProductionApp`. There is no admin check, no hidden feature, no long-press. Any volunteer can tap it.
+**What:** Checking/unchecking a box, reassigning a task, editing a note, removing a photo, deleting a history entry, removing a roster member — all changes are immediately written to Firebase and propagated to all devices. There is no undo mechanism.
 
-**Why it matters.** This is a combination of the above risk multiplied by 15. The pencil icon is adjacent to the search bar — a tool that looks generically useful, not like "admin mode for the app owner." A volunteer casually tapping the screen near the search bar could enter edit mode and see ✕ delete buttons on every task.
+**Why it matters:** A fumbled tap reassigns someone else's task. A swipe while scrolling accidentally toggles a checkbox. The change instantly propagates to 15 other devices. The only recovery is to manually reverse the action — if the user noticed it happened.
 
-**Concrete fix.** Condition the edit button on a check: `settings.adminMode` in localStorage (set from Settings), or simply a long-press on the section header, or just move the button entirely into Settings. The one-line fix: in `ChecklistView`, add `{setChecklistData && isAdmin && (...)}` where `isAdmin = currentUser === "Sam"` (the app owner). Acknowledge this is a weak gate but it prevents accidental entry by the other 15 users.
+**Concrete scenario:** A volunteer scrolling through the checklist accidentally taps a checkbox. The timer starts (auto-start on 2nd check). They uncheck it, but the timer keeps running. They don't know how to stop it. The timer now shows incorrect elapsed time for the entire team.
 
----
+**Fix:** For checkboxes, add a brief "undo" toast (3-second window) before writing to Firebase. For assignments, the current dropdown approach is correct (requires explicit selection). For the timer auto-start, consider raising the threshold or requiring an explicit "Start Timer" action.
 
-### 3.3 Assignment Dropdown Is Always Visible and Easy to Mis-Tap
+### 3.3 Timer Auto-Start Behavior: Not Discoverable
 
-**What it is.** Every `CheckItem` renders a `<select>` regardless of assignment state. On a phone in landscape or with slightly mis-aimed thumbs, a volunteer checking off a task can inadvertently open the dropdown instead of the checkbox (the checkbox is 28px; the dropdown is right below it, padding: "4px 10px").
+**What:** The timer auto-starts when the 2nd checkbox is checked across any device (line 1530). There is no visual indication that this will happen, no confirmation, and no explanation.
 
-**Why it matters.** Accidental reassignment of a task syncs instantly to all devices. Tyler sees "Setup mics" disappear from his task list because someone accidentally reassigned it. There's no notification, no undo, and the person who caused it probably doesn't know it happened.
+**Why it matters:** A volunteer checking their first two tasks has no idea they just started a team-wide timer. If someone accidentally checks and unchecks boxes during task review, the timer starts and stays running. The timer display says "⏱ Running" but doesn't explain why it started or how to stop it.
 
-**Concrete fix.** Show assignment as plain text (non-interactive) when the task is already assigned. Only render the `<select>` when: the task is unassigned, or the user explicitly taps an "edit assignment" link. This is backlog item already, but it's urgent enough to call out here as a data integrity risk, not just a UX nicety.
+**Fix:** Remove the auto-start behavior. Make the timer explicitly started via the timer UI. The auto-stop on 100% completion is fine — it's the auto-start that's confusing.
 
----
+### 3.4 Assignment Dropdown Always Visible on Incomplete Tasks
 
-### 3.4 Dependency Warning Modal Is Unreadable
+**What:** `AssignDropdown` renders for every task regardless of state (line 1039). Even tasks that are already assigned show the dropdown with the assignee name and a ▾ indicator.
 
-**What it is.** The backdrop is `rgba(0,0,0,0.6)`. The modal card background is `S.card = "rgba(255,235,210,0.03)"` — nearly transparent. Both the backdrop and the card are translucent, so checklist text from behind bleeds through the warning text.
+**Why it matters:** During setup, a volunteer scrolling through their tasks might accidentally tap the dropdown and reassign a task. The dropdown opens on any tap of the assignee area — there's no tap-and-hold or other protection against accidental activation.
 
-**Why it matters.** A volunteer triggers a dependency warning. They can't read what it says. They tap "Continue" (it's the more prominent button) because they don't know what else to do. The warning serves no purpose.
+**Concrete scenario:** Volunteer scrolling quickly, finger lands on "Tyler ▾" instead of the checkbox. Dropdown opens. They tap to dismiss but accidentally tap a name. Task is now reassigned. Tyler's task count changes on his device. Nobody knows what happened.
 
-**Concrete fix.** Change the modal card background to a solid color: `background: "#1C1A18"` (dark opaque). The backdrop can stay translucent. This is a one-line fix.
+**Fix:** Show assignee as plain text by default. Only show the dropdown when the task is unassigned or when in an explicit "assign mode." This is already identified in BACKLOG Priority 1 ("Task Card Density").
 
----
+### 3.5 Roster Removal: No Protection Against Removing Active Members
 
-### 3.5 Populated Notes Are Invisible Until Expanded
+**What:** Any user can remove any roster member via Settings (line 1134–1149). The only protection is a `confirm()` dialog. Removing a member clears all their assignments.
 
-**What it is.** `CheckItem` shows a 📌 emoji if `taskNote` exists and the task is not expanded. That's it. There is no preview, no indication of what the note says, no surface-level visibility.
+**Why it matters:** If someone accidentally removes "Tyler" from the roster, all of Tyler's 8 task assignments are instantly cleared across all devices. Tyler's name disappears from the login screen. If Tyler is currently logged in, he's logged out (line 1146–1149). There's no way to restore the assignments — they're gone.
 
-**Why it matters.** Notes are the primary async communication channel for the team. "Left WiFi router at venue — it's in the storage cabinet." A volunteer sets up the WiFi router task, doesn't expand it, doesn't see the note, can't find the router. The note exists, it's just invisible.
+**Fix:** Move roster management behind a confirmation that mentions the blast radius ("Tyler has 8 assigned tasks. Removing them from the roster will clear all assignments. This cannot be undone."). Consider making roster management Sam-only (like edit mode).
 
-**Concrete fix.** Render the first 60 characters of `taskNote` as a one-line preview below the assignment dropdown when `taskNote` exists and the task is not expanded. This is already in the backlog; note it's medium-severity here because it actively suppresses important crew communication.
+### 3.6 No Offline Indicator Until Write Failure
 
----
+**What:** The app shows a 🔴 sync error indicator only after a Firebase write fails all retries (lines 2540–2548). There is no proactive connection monitoring.
 
-### 3.6 First-Time Volunteer Can't Determine What to Do in Under 3 Seconds
+**Why it matters:** A volunteer could be checking boxes for 5 minutes on a dead WiFi connection, thinking everything is syncing. Their checks are saved to localStorage but not Firebase. Other devices don't see the changes. When WiFi returns, the full checks object is pushed to Firebase, potentially overwriting other devices' changes (see finding 1.2).
 
-**What it is.** The app opens to a dashboard showing: a percentage badge, a timer with "▶ Tap to start," a "Your Tasks" card showing 0/0 (if unassigned), and a crew status list. There is no instruction, no onboarding prompt, no indication of where to begin. The "Your Tasks" card showing 0 remaining looks like there's nothing to do.
+**Fix:** Add a Firebase `.info/connected` listener that shows an immediate "Offline — changes saved locally" banner when the connection drops. This gives the user awareness that their changes aren't syncing yet.
 
-**Why it matters.** New volunteers (turnover is explicitly noted) will open the app, see "0 remaining" on their task card, and assume they're done — or ask the team lead for help, consuming attention during the highest-pressure moment of setup.
+### 3.7 Checkbox Tap Target: Below Minimum Size
 
-**Concrete fix.** If `myItems.length === 0`, change the "Your Tasks" callout text from "0 remaining" to "No tasks assigned yet — See checklist to assign yourself tasks." Or better: surface the top-level onboarding step on the dashboard: a prompt visible when `myItems.length === 0` that says "Head to Settings to assign tasks, or tap the Checklist to assign yourself."
+**What:** Checkboxes are 28×28px (line 1022). The minimum recommended touch target for mobile is 44×44px (Apple HIG) or 48×48dp (Material Design).
 
----
+**Why it matters:** During rushed setup with sweaty/cold hands, a 28px target on a phone screen is easy to miss. The miss-tap might land on the task text (expanding details) or the assignment dropdown (opening it accidentally) instead.
 
-### 3.7 Timer Auto-Starts on First Checkbox — Undiscoverable and Sticky
+**Fix:** Keep the visual checkbox at 28px but increase the tappable area to 44×44px via padding on the button element.
 
-**What it is.** `toggleCheck` calls `if (!running) setRunning(true)`. The first checkbox checked starts the global timer. This write syncs to Firebase immediately. The timer cannot be "un-started" short of pausing it from the dashboard. An accidental check-then-uncheck starts the timer with no way for the volunteer to know that happened.
+### 3.8 History Entry Deletion: Tiny Tap Target, No Undo
 
-**Why it matters.** Setup history records `elapsed` time. If the timer was started accidentally before real setup began (during assignment/planning phase), the history entry shows a longer setup time than reality. Over 52 weeks, this corrupts the historical trend data.
+**What:** Each history entry has a ✕ button (line 1262) that is styled at `fontSize: 14` with `padding: "2px 4px"`. The effective tap area is approximately 20×20px. The only protection is a `confirm()` dialog.
 
-**Concrete fix.** Don't auto-start. Remove the `if (!running) setRunning(true)` from `toggleCheck`. Let the timer be a manual, deliberate action from the dashboard or header. The timer is synced across devices anyway — the team lead can start it when setup actually begins.
+**Why it matters:** A fat-finger while scrolling through setup history could delete a historical record. Historical data is used for week-over-week comparison and trend analysis. Once deleted, it's gone from all devices.
+
+**Fix:** Either remove the delete button from individual history entries (only allow clearing all history from settings), or increase the tap target and add a more prominent confirmation.
 
 ---
 
 ## 4. The "Fake Feature" Check
 
-### 4.1 Equipment and Purchases Nav Cards Are Dead Ends
+### 4.1 I/O Line List and Repairs Edit Modes: Fully Functional But Ephemeral
 
-Two of the six nav cards (`inventory`, `purchases`) render `PlaceholderView` with "coming in a future update." They occupy 33% of the nav grid surface area. During a rushed setup, a volunteer who taps Equipment or Purchases and hits a dead end loses confidence in the app and may stop using the nav grid entirely.
+**What:** `IOListView` (line 1840) uses `useState(DEFAULT_IO_LINE_LIST)`. `RepairsView` (line 2310) uses `useState(DEFAULT_REPAIRS)`. Neither uses `useStorage`. Additionally, lines 2652–2660 actively delete any previously stored Firebase/localStorage data for these keys on every app load.
 
-**Fix:** Remove both cards and the `PlaceholderView` component. Reduce the grid to 2×2. When Equipment and Purchases are actually built, add them back.
+**Why it matters:** The edit UI is fully functional — you can add channels, remove routes, change repair priorities, reset to defaults. But every edit is lost when the user navigates away from the view (component unmounts) or refreshes the page. The "Reset to Defaults" button is meaningless because the component always loads from defaults.
 
----
+**Severity:** High. This directly contradicts the ELIM-PROJECT.md statement that "In-app edits to checklist structure, I/O config, or repairs are stored in Firebase." They are NOT stored in Firebase — the code actively prevents it.
 
-### 4.2 Checklist Search Bar Is Always Visible for a 59-Item List
+**Fix:** Either (a) reconnect these views to `useStorage` so edits persist and sync (remove the deletion code on lines 2652–2660), or (b) remove the edit modes entirely and make these views read-only references from the code constants. Option (a) conflicts with the "code is canonical" pattern; option (b) is honest about the architecture.
 
-The search bar occupies the full width below the progress bar on every checklist load. With smart auto-expand showing only the sections that have your tasks (typically 3-5 sections, 15-20 tasks), search is redundant for 15 of 16 users in normal operation.
+### 4.2 Placeholder Views Still Routed
 
-**Why it's a liability:** It takes up 42px of vertical space on a phone, pushing the first section header further below the fold. It creates visual noise at the top of the most-used screen. Its presence implies the checklist is hard to navigate — which is the wrong signal to send about a 59-item list with collapsible sections.
+**What:** `PlaceholderView` (line 2464) still exists. Equipment and Purchases routes are still active in the main app (lines 2818, 2820). They're accessible via Settings → "Coming Soon" section (lines 1288–1306).
 
-**Fix:** Replace with a search icon (🔍) that reveals the search input on tap. The icon can live in the same row as the edit button, so no space is wasted.
+**Why it matters:** They've been moved out of the main dashboard nav grid (good), but they're still reachable from Settings and still have active routes. A volunteer exploring Settings sees "Equipment" and "Purchases" cards, taps them, and gets a dead end. It's a minor nuisance, but it's dead code that adds to the component count and maintenance surface.
 
----
+**Fix:** Remove `PlaceholderView`, remove the routes from the main app's view switch, and remove the "Coming Soon" section from `SettingsView`. Add these features when they're built, not before.
 
-### 4.3 Signal Flow SVGs Will Silently Drift Out of Sync
+### 4.3 Signal Flow SVGs: Hardcoded and Already Drifting
 
-The three SVG diagrams (~200 lines of hand-placed `<Box>`, `<Arrow>`, `<Label>` elements) are a maintenance liability, not just a static reference. Equipment changes in v5.5.2 alone required updates to all three diagrams and the I/O list and multiple checklist tasks — and OPEN-ITEMS.md still documents four unknowns (ATEM SDI port assignments, Resi encoder connection, Omar/Mitch Mac ATEM connection, full Dante routing) that mean the diagrams may be wrong right now.
+**What:** Three SVG diagrams (~160 lines total) in `SignalFlowView` (lines 2138–2298) hardcode equipment names, connections, and routing. The I/O Line List already contains the routing information that the SVGs depict.
 
-**Why it matters:** A volunteer references the Audio signal chain SVG to troubleshoot a Dante routing issue. The SVG shows a path that no longer reflects the actual setup. They follow the wrong diagnostic steps. The SVG creates false confidence.
+**Why it matters:** The SVGs currently reference "ATEM TV Studio 4K" correctly, but previous versions said "ATEM Mini Pro" (per BACKLOG.md, this was a known correction). As equipment changes, the SVGs must be manually updated separately from the I/O data — a dual source of truth. The SVGs will silently drift from the actual I/O configuration.
 
-**Fix:** Add a "Last updated" date stamp to each SVG section header. When equipment changes in code, updating the SVG timestamp becomes a deliberate act that forces the author to acknowledge the diagram needs review. Longer term: replace with reference photos taken on-site, which self-certify their own accuracy.
+**Current state:** The ATEM name appears corrected in the SVGs. But the video signal chain SVG shows "ProPresenter → Internet → Resi" which isn't quite right (the Resi gets direct internet, not through ProPresenter). The audio chain shows the AVIO → ATEM path correctly.
 
----
+**Fix:** Accept SVGs as a manually maintained reference document (they're professional and always sharp). Add a comment at the top of `SignalFlowView` noting the last-verified date and which equipment changes would require SVG updates. The dynamic generation approach from BACKLOG Priority 5 is ambitious and probably not worth the complexity.
 
-### 4.4 "Last Setup" Stat on Dashboard Hero Is a Post-Mortem Feature Shown During Setup
+### 4.4 Checklist In-App Edit Mode: Works But Edits Don't Survive Reload
 
-```javascript
-{history && history.length > 0 && (
-  <div style={{ marginTop: 10, fontSize: 12, color: S.textMuted }}>
-    Last: {history[0].date} — {history[0].pct}% in {formatTime(history[0].elapsed)}
-  </div>
-)}
-```
-This renders below the timer during the active setup window. "Last: 2026-03-21 — 100% in 1:12:34" is information that serves the team lead reviewing trends, not a volunteer setting up cables at 8am.
+**What:** The checklist edit mode (Sam-only) allows adding, removing, and renaming tasks. These edits modify the `checklistData` state, which is a plain `useState(CHECKLIST_DATA)` (line 2538). Like the I/O and Repairs views, edits are lost on page refresh.
 
-**Fix:** Remove this line from the dashboard timer zone. The data already lives in Settings → Setup History.
+**Why it matters:** Sam edits a task description during setup to fix a typo. The fix is visible to all devices because `checklistData` flows through props. But when anyone refreshes, the edit is gone. Sam thinks he fixed it; next week it's back to the old text.
+
+**Key difference from I/O/Repairs:** Checklist edits DO propagate to other devices in the current session because `checklistData` is lifted to the root component and passed as props. I/O and Repairs edits don't even propagate because they're local component state.
+
+**Fix:** Same as 4.1 — either persist via `useStorage` or remove the edit mode. If persisted, the "code is canonical, Firebase is live" pattern needs a reconciliation strategy.
 
 ---
 
 ## 5. Performance & Render Efficiency
 
-### 5.1 Full App Re-Renders Every Second Due to Timer Interval
+### 5.1 `React.memo` on `CheckItem` Is Defeated by Inline Closures
 
-**What it is.** `setElapsed(e)` is called inside `setInterval(compute, 1000)` in `ElimProductionApp`. This triggers a re-render of `ElimProductionApp` every second, which re-renders every currently-mounted child. When the checklist is visible, that means 59 `CheckItem` instances re-render every second.
+**What:** `CheckItem` is wrapped in `React.memo` (line 988). However, it receives props created inline in the render function:
+- `onToggle={() => toggleCheck(item.id)}` — new function every render
+- `onAssign={u => setAssignments({ ...assignments, [item.id]: u })}` — new function every render
+- `allChecks={checks}` — new object reference on every sync event
 
-Each `CheckItem` render:
-- Executes the `cardStyle` IIFE (conditional logic + object construction)
-- Recreates all inline style objects
-- Evaluates `isMine`, `isUnassigned`, and `hasExpandable` conditions
+**Why it matters:** `React.memo` does shallow prop comparison. New function references and new object references fail the shallow check every time. Every `CheckItem` re-renders on every state change in the parent, regardless of whether the item's actual data changed. With 59 tasks and a timer ticking every second, that's 59 wasted re-renders per second.
 
-On an iPhone 12 Pro this is unnoticeable. On a mid-range 2019 Android, rendering 59 cards per second is measurable jank.
+**Fix:** Wrap `onToggle` and `onAssign` in `useCallback` at the `ChecklistView` level (keyed to item ID). For `allChecks`, pass only the relevant boolean `allChecks[item.id]` as a prop, not the full object. Alternatively, accept the re-renders (React 18's concurrent features handle this reasonably on modern phones) and only optimize if profiling shows actual jank.
 
-**Concrete fix.** Move `elapsed` and `remaining` out of the prop chain for `ChecklistView`. The checklist doesn't display the timer inline — it only passes `running`/`setRunning` to start it. Only the `Header`'s `rightContent` and `DashboardView` need live timer values. Extract a `TimerDisplay` component that reads timer state directly, preventing the cascade.
+### 5.2 Timer Causes Full App Re-Render Every Second
 
-Alternatively: `React.memo` on `CheckItem` and pass only stable props. The `cardStyle` should be memoized with `useMemo`.
+**What:** The timer's `setInterval` (line 2572) calls `setElapsed(e)` every second. `elapsed` is state in `ElimProductionApp` (the root component). Every state change in the root causes the entire component tree to re-render.
 
----
+**Why it matters:** Combined with the defeated `React.memo` (5.1), the timer causes all 59 `CheckItem` components, the `Header`, the `DashboardView` or `ChecklistView`, and all their children to re-render every second. On a budget phone, this is measurable — each render cycle involves creating ~60 style objects, diffing ~60 DOM subtrees, and running the GC on the old objects.
 
-### 5.2 `allItems` Recomputed Every Render With No Memoization
+**Fix:** Extract the timer display into a self-contained component with its own `setInterval` and local state. The root `ElimProductionApp` only needs to own the `timerState` (persisted data). The computed `elapsed` and `remaining` values can be derived locally inside the timer component. This isolates the per-second re-renders to the timer display only.
 
-**What it is.** In `ElimProductionApp`:
-```javascript
-const allItems = checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s })));
-```
-This runs on every render. Given the timer fires every second, `allItems` (an array of 59 objects) is recreated every second. It's passed to `DashboardView` and used as `effectiveAllItems`, which then runs crew stats computation inline:
-```javascript
-effectiveAllItems.forEach(i => { ... });
-const sortedPeople = Object.entries(people).sort(...);
-```
-Both run on every second.
+### 5.3 `ALL_ITEMS` Module-Scope Constant vs. Dynamic `allItems`
 
-**Concrete fix.** `useMemo` on `allItems`:
-```javascript
-const allItems = useMemo(
-  () => checklistData.flatMap(s => s.items.map(i => ({ ...i, section: s }))),
-  [checklistData]
-);
-```
-This makes `allItems` stable across timer re-renders, and crew stat computation only runs when the checklist structure actually changes.
+**What:** Line 616 computes `ALL_ITEMS` from `CHECKLIST_DATA` at module scope. Line 2725 computes `allItems` via `useMemo` from the dynamic `checklistData` state. `CheckItem` uses the module-scope `ALL_ITEMS` for dependency lookups (line 1001: `const depTask = ALL_ITEMS.find(t => t.id === unmet[0])`).
 
----
+**Why it matters:** If tasks are added or removed via the in-app edit mode, the module-scope `ALL_ITEMS` is stale. Dependency lookups (for the "Dependency Not Complete" warning) won't find dynamically added tasks. This is a correctness bug, not just a performance issue.
 
-### 5.3 Firebase Writes on Assignment Changes Propagate Entire Object
+**Fix:** Pass the dynamic `allItems` (or the full `checklistData`) as a prop to `CheckItem` for dependency resolution. Remove or repurpose the module-scope `ALL_ITEMS` to avoid confusion.
 
-**What it is.** `setAssignments({ ...assignments, [item.id]: u })` writes the entire `assignments` object to Firebase on every assignment change. With 59 tasks all assigned, that's a JSON blob of ~59 key-value pairs written in full every time one assignment changes. Same for `checks`, `completions`, `taskNotes`.
+### 5.4 Style Objects Recreated in Render Functions
 
-**Why it matters.** For `taskNotes` specifically, if a volunteer types a multi-paragraph note and saves it, the entire notes object (all notes for all tasks) is written to Firebase. This is fine for the current scale but becomes the wrong pattern as note content grows.
+**What:** Most style objects are defined inline in JSX: `style={{ display: "flex", alignItems: "center", ... }}`. Each render creates new object allocations that are immediately eligible for garbage collection.
 
-**Concrete fix.** This is architectural and low priority for now. Flagging it because: the current pattern means that when two devices are simultaneously editing different tasks' notes, they will overwrite each other's changes (last-write-wins on the entire object). Mitigating this requires per-task keys (`elim3-notes.{taskId}`) which is a larger refactor. For now, document the known limitation.
+**Why it matters:** With 59 tasks × 5-10 inline style objects per task × re-renders every second (timer), that's 300-600 object allocations per second. On old phones with aggressive GC, this causes periodic frame drops (GC pauses).
 
----
+**What's already done:** `CARD_BASE_STYLE` (line 232) and the `S` theme object (lines 216–230) are hoisted to module scope. This pattern is correct but inconsistently applied.
 
-### 5.4 Initial Load Is Gated on All 9 Storage Keys Including Photos
+**Fix:** Hoist style objects that don't depend on dynamic values to module scope (e.g., the header style, section header style, checkbox style). Style objects that depend on computed values (e.g., `cardStyle` which depends on checked/assigned state) can stay inline but should use memoization or conditional spreading from hoisted base objects.
 
-**What it is.** `const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8 && c9;` — the app renders a loading spinner until all 9 Firebase reads complete. `elim3-photos` is one of those 9. If photos have accumulated to 5MB+, the initial load is blocked until a multi-megabyte Firebase read completes, on a phone, on venue WiFi.
+### 5.5 Initial Load: Photos Block Rendering
 
-**Why it matters.** Setup day is the worst time to have a slow app load. A volunteer opens the app 5 minutes before setup starts and stares at a spinner for 8 seconds because of reference photos from 3 months ago.
+**What:** The `loaded` gate (line 2750) requires all 8 `useStorage` hooks to resolve before rendering: `const loaded = c1 && c2 && c3 && c4 && c5 && c6 && c7 && c8`. One of these is `c5` (photos). Photos are the largest payload.
 
-**Concrete fix.** Remove `c5` (photos loaded flag) from the `loaded` gate. Photos can be fetched lazily when tasks are expanded. The app should be fully interactive without photos loaded — they're non-blocking reference material.
+**Why it matters:** On slow WiFi, if photos take 10 seconds to download, the user sees the loading spinner for 10 seconds even though all the data they actually need (checks, assignments, roster) loaded in 1 second. Photos are only needed when a user expands a task with photo slots.
 
----
+**Fix:** Exclude photos from the initial load gate. Load checks, assignments, roster, etc. eagerly. Load photos lazily — either on first expand of a task with photos, or in the background after the main UI renders. This is already noted in ELIM-PROJECT.md line 405: "Photos excluded from initial load gate" — but the current code does NOT implement this. `c5` (photos loaded flag) is still part of the gate.
 
-### 5.5 `cards` Array Recreated Every Render in `DashboardView`
+### 5.6 Memory Leaks: Properly Handled
 
-**What it is.** In `DashboardView`:
-```javascript
-const cards = [
-  { id: "power-seq", icon: "⚡", title: "Power Sequence", subtitle: "Equipment order" },
-  ...
-];
-```
-This array of 6 static objects is recreated on every render. `DashboardView` re-renders on every timer tick. The `cards` array is never used outside `DashboardView`.
+**What:** All `useEffect` hooks that add event listeners return cleanup functions. `useBackSwipe` cleans up touch listeners. `useStorage` cleans up `elim-sync` listeners. The timer cleans up its `setInterval`. `AssignDropdown` cleans up click-outside listeners.
 
-**Concrete fix.** Hoist to module scope — it's a constant. Place it immediately below `POWER_SEQUENCE`. Zero runtime cost, trivial change.
+**Why it matters:** No action needed. This is well-implemented.
 
 ---
 
 ## Zero-Principles Fix List
 
-Ranked strictly by (1) data loss/corruption risk, (2) volunteer confusion/failure risk, (3) performance, (4) code quality.
+Ranked strictly by: (1) data loss/corruption risk, (2) volunteer confusion/failure risk, (3) performance, (4) code quality.
 
-| # | Finding | Category | Risk |
-|---|---------|----------|------|
-| 1 | Task deletion has no confirmation — instant sync, no undo | Data loss | **Critical** |
-| 2 | Failed Firebase writes are silently discarded when listener fires | Data loss | **Critical** |
-| 3 | Checked task counter overcounts after task deletion (shows 103%) | Data corruption | **High** |
-| 4 | `newWeek` reset is non-atomic — partial state on interruption | Data corruption | **High** |
-| 5 | Base64 photos block initial load and will eventually breach Firebase read limits | Data loss (future) | **High** |
-| 6 | localStorage re-seed on reconnect can overwrite newer Firebase data | Data loss | **High** |
-| 7 | `JSON.parse("null")` crash path — white screen on all devices | App crash | **High** |
-| 8 | Edit mode accessible to all 16 volunteers, not just admin | Volunteer confusion + data loss | **High** |
-| 9 | Dependency warning modal unreadable — volunteers ignore or misread it | Volunteer confusion | **Medium** |
-| 10 | Assignment dropdown always visible — easy accidental reassignment | Volunteer confusion | **Medium** |
-| 11 | Populated notes invisible without expanding — suppresses crew communication | Volunteer confusion | **Medium** |
-| 12 | Timer auto-starts on first checkbox — corrupts setup time history | Data corruption (minor) | **Medium** |
-| 13 | First-time volunteer sees "0 remaining" and has no next step | Volunteer confusion | **Medium** |
-| 14 | Orphaned data accumulates in supporting keys after task/member deletion | Data creep | **Medium** |
-| 15 | `localStorage` full → silent data loss on photo writes | Data loss (future) | **Medium** |
-| 16 | Equipment and Purchases nav cards lead to dead ends | Fake feature / confusion | **Low** |
-| 17 | Signal Flow SVGs will drift out of sync silently | Fake feature / false confidence | **Low** |
-| 18 | "Last setup" stat on dashboard hero is post-mortem noise | Visual noise | **Low** |
-| 19 | Checklist search bar always visible — wastes space, implies difficulty | Visual noise | **Low** |
-| 20 | Full app re-renders every second due to timer interval | Performance | **Low** |
-| 21 | `allItems` recomputed every timer tick — no `useMemo` | Performance | **Low** |
-| 22 | Photos block initial load gate — should be lazy | Performance | **Low** |
-| 23 | `elim-sync` events not debounced — potential rapid re-renders | Performance | **Low** |
-| 24 | `cards` array in `DashboardView` recreated every render | Code quality | **Trivial** |
-| 25 | `CHECKLIST_DATA` has no version field — no migration path for structural changes | Maintainability | **Low** |
-| 26 | Whole-object Firebase writes mean concurrent note edits overwrite each other | Known limitation | **Low** |
+| # | Finding | Category | Risk | Complexity | Ref |
+|---|---------|----------|------|------------|-----|
+| 1 | **`_pendingWrites` never cleared on final retry failure** — silent sync freeze for the failed key on that device | Data Loss | Critical | Low | 1.1 |
+| 2 | **Offline writes use full-object `.set()` instead of field-level `.update()`** — concurrent offline edits silently overwrite each other | Data Loss | Critical | High | 1.2 |
+| 3 | **I/O, Repairs, and Checklist edit modes are ephemeral** — edits lost on refresh/navigate, contradicts documented behavior | Data Loss | High | Med | 1.3, 4.1, 4.4 |
+| 4 | **Photos stored as unbounded base64 blob on single Firebase key** — growing toward tab crash on mobile | Data Loss | High | High | 1.5, 2.6 |
+| 5 | **No service worker — app is not offline-functional** — refresh in dead zone = blank page | Volunteer UX | High | Med | 1.7 |
+| 6 | **No offline connection indicator** — volunteers check boxes thinking they're syncing when they aren't | Volunteer UX | High | Low | 3.6 |
+| 7 | **No undo for any action** — accidental checkbox toggle, reassignment, or roster removal propagates instantly to all devices | Volunteer UX | High | Med | 3.2 |
+| 8 | **Assignment dropdown always visible** — invites accidental reassignment during rushed scrolling | Volunteer UX | Med | Med | 3.4 |
+| 9 | **Timer auto-start on 2nd checkbox** — confusing, not discoverable, hard to reverse | Volunteer UX | Med | Low | 3.3 |
+| 10 | **Roster removal clears all assignments with minimal warning** — one tap destroys a session's worth of assignment work | Volunteer UX | Med | Low | 3.5 |
+| 11 | **No data migration path for checklist structure changes** — orphaned data accumulates, assignments lost on reset after structural change | Data Loss | Med | Med | 1.4 |
+| 12 | **`ALL_ITEMS` module-scope constant used for dependency lookup instead of dynamic `allItems`** — dependency warnings fail for dynamically added tasks | Correctness | Med | Low | 5.3 |
+| 13 | **Photos block initial rendering** — `loaded` gate waits for photo download before showing any UI | Performance | Med | Low | 5.5 |
+| 14 | **Timer re-renders entire app every second** — 59 CheckItem re-renders/sec due to root state update + defeated React.memo | Performance | Med | Med | 5.2 |
+| 15 | **`React.memo` on CheckItem defeated by inline closures** — no memoization benefit, wasted comparison overhead | Performance | Low | Med | 5.1 |
+| 16 | **Checkbox tap target 28px, below 44px minimum** — miss-taps during rushed setup | Volunteer UX | Low | Low | 3.7 |
+| 17 | **PlaceholderView and dead routes still exist** — minor confusion, dead code | Code Quality | Low | Low | 4.2 |
+| 18 | **Signal Flow SVGs hardcoded, dual source of truth with I/O data** — will silently drift as equipment changes | Code Quality | Low | Low | 4.3 |
+| 19 | **`_ls.set()` swallows quota errors silently** — localStorage full goes unnoticed | Data Resilience | Low | Low | 2.3 |
+| 20 | **`elim-sync` events not debounced** — rapid-fire updates from 16 devices cause render thrashing | Performance | Low | Low | 2.5 |
+| 21 | **`newWeek` reset not fully atomic** — theoretical partial state on crash during reset (mitigated by pending-reset flag) | Data Resilience | Low | Med | 1.6 |
+| 22 | **Inline style objects recreated every render** — GC pressure on old phones with timer running | Performance | Low | Med | 5.4 |
+| 23 | **`JSON.parse(JSON.stringify())` used 8+ times without utility extraction** — readability, not correctness | Code Quality | Low | Low | 2.2 |
+| 24 | **History entry delete button: tiny tap target (20px), no undo** — accidental deletion of historical data | Volunteer UX | Low | Low | 3.8 |
+| 25 | **No data validation on load** — malformed Firebase data could cause render errors (caught by ErrorBoundary, but user sees crash screen) | Data Resilience | Low | Low | BACKLOG P4 |
+
+---
+
+*End of audit. No code changes included. Each fix should be implemented and tested individually, in priority order.*
