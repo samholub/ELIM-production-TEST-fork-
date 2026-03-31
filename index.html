@@ -152,38 +152,41 @@
       async merge(key, fields, shared) {
         const fbKey = key.replace(/\./g, '_');
         const current = _ls.get('elim_' + key);
-        let merged;
+        let fullObj = {};
         try {
           const parsed = current ? JSON.parse(current) : {};
-          if (typeof parsed === 'object' && !Array.isArray(parsed)) {
-            merged = { ...parsed };
-            Object.entries(fields).forEach(([k, v]) => {
-              if (v === null || v === undefined) delete merged[k];
-              else merged[k] = v;
-            });
-          } else {
-            merged = fields;
-          }
-        } catch(e) { merged = fields; }
-        _ls.set('elim_' + key, JSON.stringify(merged));
+          if (typeof parsed === 'object' && !Array.isArray(parsed)) fullObj = { ...parsed };
+        } catch(e) {}
+        for (const k of Object.keys(fields)) {
+          if (fields[k] === null || fields[k] === undefined) delete fullObj[k];
+          else fullObj[k] = fields[k];
+        }
+        _ls.set('elim_' + key, JSON.stringify(fullObj));
         _startListener(key);
         if (_fb) {
           _pendingWrites.add(key);
-          const attemptMerge = (attemptsLeft) => {
-            _fb.child(fbKey).update(fields).then(() => {
+          const attemptMerge = (attemptsLeft, delay) => {
+            _fb.child(fbKey).get().then(snap => {
+              const currentVal = snap.exists() ? snap.val() : null;
+              return (typeof currentVal === 'string' || currentVal === null)
+                ? _fb.child(fbKey).set(fullObj)
+                : _fb.child(fbKey).update(fields);
+            }).then(() => {
               _pendingWrites.delete(key);
+              window.dispatchEvent(new CustomEvent('elim-sync-status', { detail: { status: 'ok' } }));
             }).catch((e) => {
-              console.warn('Firebase merge failed:', e.message);
+              console.warn('Firebase merge failed:', e.message, '— retries left:', attemptsLeft);
               if (attemptsLeft > 0) {
-                setTimeout(() => attemptMerge(attemptsLeft - 1), 5000);
+                setTimeout(() => attemptMerge(attemptsLeft - 1, Math.min(delay * 2, 30000)), delay);
               } else {
                 _pendingWrites.delete(key);
+                window.dispatchEvent(new CustomEvent('elim-sync-status', { detail: { status: 'error', key } }));
               }
             });
           };
-          attemptMerge(1);
+          attemptMerge(4, 2000);
         }
-        return { key, value: JSON.stringify(merged), shared: !!shared };
+        return { key, value: JSON.stringify(fullObj), shared: !!shared };
       },
       async delete(key, shared) {
         const fbKey = key.replace(/\./g, '_');
@@ -659,21 +662,21 @@ const ALL_ITEMS = CHECKLIST_DATA.flatMap(s => s.items.map(i => ({ ...i, section:
 function useStorage(key, initial, shared = true) {
   const [val, setVal] = useState(initial);
   const [loaded, setLoaded] = useState(false);
+  const prevRef = useRef(initial);
   useEffect(() => {
     window.storage.get(key, shared).then(r => {
       if (r?.value) {
         try {
           const parsed = JSON.parse(r.value);
-          if (parsed != null) setVal(parsed);
+          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
         } catch(err) {}
       }
     }).catch(() => {}).finally(() => setLoaded(true));
-    // Real-time sync: update state when Firebase pushes changes from other devices
     const handler = (e) => {
       if (e.detail?.key === key && e.detail?.value) {
         try {
           const parsed = JSON.parse(e.detail.value);
-          if (parsed != null) setVal(parsed);
+          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
         } catch(err) {}
       }
     };
@@ -681,25 +684,28 @@ function useStorage(key, initial, shared = true) {
     return () => window.removeEventListener('elim-sync', handler);
   }, []);
   const save = useCallback((v) => {
+    const prev = prevRef.current;
+    prevRef.current = v;
     setVal(v);
+    if (typeof v === 'object' && v !== null && !Array.isArray(v) &&
+        typeof prev === 'object' && prev !== null && !Array.isArray(prev)) {
+      const fields = {};
+      let changeCount = 0;
+      for (const k of Object.keys(v)) {
+        if (v[k] !== prev[k]) { fields[k] = v[k]; changeCount++; }
+      }
+      for (const k of Object.keys(prev)) {
+        if (!(k in v)) { fields[k] = null; changeCount++; }
+      }
+      const totalKeys = Math.max(Object.keys(v).length, Object.keys(prev).length);
+      if (changeCount > 0 && changeCount < totalKeys) {
+        window.storage.merge(key, fields, shared).catch(() => {});
+        return;
+      }
+    }
     window.storage.set(key, JSON.stringify(v), shared).catch(() => {});
   }, [key, shared]);
-  const saveMerge = useCallback((fields) => {
-    setVal(prev => {
-      if (typeof prev !== 'object' || Array.isArray(prev)) {
-        window.storage.merge(key, fields, shared).catch(() => {});
-        return fields;
-      }
-      const next = { ...prev };
-      Object.entries(fields).forEach(([k, v]) => {
-        if (v === null || v === undefined) delete next[k];
-        else next[k] = v;
-      });
-      window.storage.merge(key, fields, shared).catch(() => {});
-      return next;
-    });
-  }, [key, shared]);
-  return [val, save, loaded, saveMerge];
+  return [val, save, loaded];
 }
 
 function formatTime(sec) {
@@ -1165,7 +1171,7 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
   );
 });
 // ═══════════════════════════════════════════
-function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments, onSetupComplete, onDeleteHistory, mergeAssignments }) {
+function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history, onNewWeek, assignments, setAssignments, onSetupComplete, onDeleteHistory }) {
   const [newName, setNewName] = useState("");
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [confirmingComplete, setConfirmingComplete] = useState(false);
@@ -1187,13 +1193,7 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
   const removeMember = (name) => {
     if (!confirm(`Remove ${name} from the roster? Their task assignments will be cleared.`)) return;
     setRoster(roster.filter(r => r.name !== name));
-    if (assignments && mergeAssignments) {
-      const nullFields = {};
-      Object.keys(assignments).forEach(taskId => {
-        if (assignments[taskId] === name) nullFields[taskId] = null;
-      });
-      if (Object.keys(nullFields).length > 0) mergeAssignments(nullFields);
-    } else if (assignments && setAssignments) {
+    if (assignments && setAssignments) {
       const updated = { ...assignments };
       let changed = false;
       Object.keys(updated).forEach(taskId => {
@@ -1559,7 +1559,7 @@ function DashboardView({ onNavigate, checks, totalItems, assignments, currentUse
   );
 }
 
-function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, elapsed, running, setRunning, teamMembers, initialFilter, noAutoExpand, checklistData, setChecklistData, mergeChecks, mergeAssignments, mergeCompletions, mergeNotes }) {
+function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, elapsed, running, setRunning, teamMembers, initialFilter, noAutoExpand, checklistData, setChecklistData }) {
   const [manualCollapse, setManualCollapse] = useState({});
   const [filterUser, setFilterUser] = useState(initialFilter || "all");
   const [searchText, setSearchText] = useState("");
@@ -1580,22 +1580,12 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   useEffect(() => { setManualCollapse({}); }, [filterUser, searchText, editMode]);
 
   const toggleCheck = (itemId) => {
-    const newVal = !checks[itemId];
-    if (mergeChecks) {
-      mergeChecks({ [itemId]: newVal });
-      if (newVal) mergeCompletions({ [itemId]: { name: currentUser || "Someone" } });
-      else mergeCompletions({ [itemId]: null });
-    } else {
-      const nc = { ...checks, [itemId]: newVal };
-      const ncomp = { ...completions };
-      if (newVal) ncomp[itemId] = { name: currentUser || "Someone" };
-      else delete ncomp[itemId];
-      setChecks(nc); setCompletions(ncomp);
-    }
-    if (!running) {
-      const checkedCount = Object.values({ ...checks, [itemId]: newVal }).filter(Boolean).length;
-      if (checkedCount >= 2) setRunning(true);
-    }
+    const nc = { ...checks, [itemId]: !checks[itemId] };
+    const ncomp = { ...completions };
+    if (nc[itemId]) { ncomp[itemId] = { name: currentUser || "Someone" }; }
+    else { delete ncomp[itemId]; }
+    setChecks(nc); setCompletions(ncomp);
+    if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
 
   const addTaskToSection = (sectionId) => {
@@ -1615,18 +1605,11 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
     const sec = updated.find(s => s.id === sectionId);
     if (sec) sec.items = sec.items.filter(i => i.id !== taskId);
     setChecklistData(updated);
-    // Clean up orphaned entries — null tells Firebase .update() to delete the field
-    if (mergeChecks) {
-      if (checks[taskId] !== undefined) mergeChecks({ [taskId]: null });
-      if (assignments[taskId] !== undefined) mergeAssignments({ [taskId]: null });
-      if (taskNotes[taskId] !== undefined) mergeNotes({ [taskId]: null });
-      if (completions[taskId] !== undefined) mergeCompletions({ [taskId]: null });
-    } else {
-      if (checks[taskId] !== undefined) { const nc = { ...checks }; delete nc[taskId]; setChecks(nc); }
-      if (assignments[taskId] !== undefined) { const na = { ...assignments }; delete na[taskId]; setAssignments(na); }
-      if (taskNotes[taskId] !== undefined) { const nn = { ...taskNotes }; delete nn[taskId]; setTaskNotes(nn); }
-      if (completions[taskId] !== undefined) { const nk = { ...completions }; delete nk[taskId]; setCompletions(nk); }
-    }
+    // Clean up orphaned entries in all supporting keys for this task ID
+    if (checks[taskId] !== undefined) { const nc = { ...checks }; delete nc[taskId]; setChecks(nc); }
+    if (assignments[taskId] !== undefined) { const na = { ...assignments }; delete na[taskId]; setAssignments(na); }
+    if (taskNotes[taskId] !== undefined) { const nn = { ...taskNotes }; delete nn[taskId]; setTaskNotes(nn); }
+    if (completions[taskId] !== undefined) { const nk = { ...completions }; delete nk[taskId]; setCompletions(nk); }
   };
 
   const saveTaskEdit = (sectionId, taskId) => {
@@ -1774,8 +1757,8 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
                             style={{ cursor: editMode ? "text" : undefined }}>
                             <CheckItem item={item} checked={!!checks[item.id]}
                               onToggle={() => !editMode && toggleCheck(item.id)} assignee={assignments[item.id]}
-                              onAssign={u => mergeAssignments ? mergeAssignments({ [item.id]: u || null }) : setAssignments({ ...assignments, [item.id]: u })}
-                              taskNote={taskNotes[item.id]} onUpdateNote={n => mergeNotes ? mergeNotes({ [item.id]: n || null }) : setTaskNotes({ ...taskNotes, [item.id]: n })}
+                              onAssign={u => setAssignments({ ...assignments, [item.id]: u })}
+                              taskNote={taskNotes[item.id]} onUpdateNote={n => setTaskNotes({ ...taskNotes, [item.id]: n })}
                               photos={photos} setPhotos={setPhotos}
                               isMine={assignments[item.id] === currentUser || (filterUser !== "all" && assignments[item.id] === filterUser)} currentUser={currentUser}
                               teamMembers={teamMembers} isLast={idx === filteredItems.length - 1} allChecks={checks} />
@@ -1826,28 +1809,18 @@ function ChecklistView({ currentUser, checks, setChecks, assignments, setAssignm
   );
 }
 
-function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers, elapsed, running, setRunning, remaining, targetSeconds, targetUser, checklistData, onNavigate, mergeChecks, mergeAssignments, mergeCompletions, mergeNotes }) {
+function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers, elapsed, running, setRunning, remaining, targetSeconds, targetUser, checklistData, onNavigate }) {
   const isUnassigned = targetUser === "__unassigned__";
   const viewUser = isUnassigned ? null : (targetUser || currentUser);
   const isOwnView = !targetUser;
   const data = checklistData || CHECKLIST_DATA;
   const toggleCheck = (itemId) => {
-    const newVal = !checks[itemId];
-    if (mergeChecks) {
-      mergeChecks({ [itemId]: newVal });
-      if (newVal) mergeCompletions({ [itemId]: { name: currentUser } });
-      else mergeCompletions({ [itemId]: null });
-    } else {
-      const nc = { ...checks, [itemId]: newVal };
-      const ncomp = { ...completions };
-      if (newVal) ncomp[itemId] = { name: currentUser };
-      else delete ncomp[itemId];
-      setChecks(nc); setCompletions(ncomp);
-    }
-    if (!running) {
-      const checkedCount = Object.values({ ...checks, [itemId]: newVal }).filter(Boolean).length;
-      if (checkedCount >= 2) setRunning(true);
-    }
+    const nc = { ...checks, [itemId]: !checks[itemId] };
+    const ncomp = { ...completions };
+    if (nc[itemId]) { ncomp[itemId] = { name: currentUser }; }
+    else { delete ncomp[itemId]; }
+    setChecks(nc); setCompletions(ncomp);
+    if (!running && Object.values(nc).filter(Boolean).length >= 2) setRunning(true);
   };
   const [manualExpand, setManualExpand] = useState({});
   const hasTasks = data.some(s => s.items.some(i => isUnassigned ? !assignments[i.id] : assignments[i.id] === viewUser));
@@ -1873,8 +1846,8 @@ function MyTasksView({ currentUser, checks, setChecks, assignments, setAssignmen
               {my.map((item, idx) => (
                 <CheckItem key={item.id} item={item} checked={!!checks[item.id]}
                   onToggle={() => toggleCheck(item.id)} assignee={assignments[item.id]}
-                  onAssign={u => mergeAssignments ? mergeAssignments({ [item.id]: u || null }) : setAssignments({ ...assignments, [item.id]: u })}
-                  taskNote={taskNotes[item.id]} onUpdateNote={n => mergeNotes ? mergeNotes({ [item.id]: n || null }) : setTaskNotes({ ...taskNotes, [item.id]: n })}
+                  onAssign={u => setAssignments({ ...assignments, [item.id]: u })}
+                  taskNote={taskNotes[item.id]} onUpdateNote={n => setTaskNotes({ ...taskNotes, [item.id]: n })}
                   photos={photos} setPhotos={setPhotos}
                   isMine={isOwnView || assignments[item.id] === currentUser} currentUser={currentUser}
                   teamMembers={teamMembers} isLast={idx === my.length - 1} allChecks={checks} />
@@ -2612,10 +2585,10 @@ function ElimProductionApp() {
   const [viewStack, setViewStack] = useState(["my-tasks"]);
   const view = viewStack[viewStack.length - 1];
   const [checklistFilter, setChecklistFilter] = useState(null);
-  const [checks, setChecks, c1, mergeChecks] = useStorage("elim3-checks", {});
-  const [assignments, setAssignments, c2, mergeAssignments] = useStorage("elim3-assign", {});
-  const [completions, setCompletions, c3, mergeCompletions] = useStorage("elim3-comp", {});
-  const [taskNotes, setTaskNotes, c4, mergeNotes] = useStorage("elim3-notes", {});
+  const [checks, setChecks, c1] = useStorage("elim3-checks", {});
+  const [assignments, setAssignments, c2] = useStorage("elim3-assign", {});
+  const [completions, setCompletions, c3] = useStorage("elim3-comp", {});
+  const [taskNotes, setTaskNotes, c4] = useStorage("elim3-notes", {});
   const [photos, setPhotos, c5] = useStorage("elim3-photos", {});
   const [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
   const [timerState, setTimerState, c7] = useStorage("elim3-timer", { startedAt: null, accumulated: 0, targetMinutes: null });
@@ -2869,7 +2842,7 @@ function ElimProductionApp() {
     </div>
   );
 
-  const sharedProps = { currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers, mergeChecks, mergeAssignments, mergeCompletions, mergeNotes };
+  const sharedProps = { currentUser, checks, setChecks, assignments, setAssignments, completions, setCompletions, taskNotes, setTaskNotes, photos, setPhotos, teamMembers };
   const checklistProps = { checklistData, setChecklistData };
 
   return (
@@ -2898,7 +2871,7 @@ function ElimProductionApp() {
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} onNavigate={navigate} />}
         {view === "power-seq" && <PowerSeqView />}
         {view === "io-list" && <IOListView />}
-        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} onDeleteHistory={deleteHistory} mergeAssignments={mergeAssignments} />}
+        {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} onDeleteHistory={deleteHistory} />}
         {view === "network" && <SignalFlowView />}
         {view === "inventory" && <PlaceholderView icon="📦" title="Equipment Inventory" description="Full equipment inventory with status tracking coming in a future update." />}
         {view === "repairs" && <RepairsView />}
