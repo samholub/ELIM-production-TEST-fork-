@@ -8,7 +8,7 @@ A Progressive Web App (PWA) for managing weekly AV equipment setup and teardown 
 - **Frontend:** React 18 loaded via CDN, JSX transpiled in-browser by Babel Standalone
 - **Database:** Firebase Realtime Database (with localStorage fallback for offline support)
 - **Styling:** Inline JavaScript styles + base CSS in the HTML file
-- **Version:** v5.9.0
+- **Version:** v5.10.0
 
 ## Project Layout
 
@@ -39,8 +39,8 @@ npm start
 - Note previews shown above the fold on task cards
 - Scroll position preserved across view navigation
 - Checklist search hidden behind toggle icon
-- Dashboard nav grid: Power Sequence, I/O Line List, Signal Flow, Repairs (2×2)
-- Equipment & Purchases shown as "Coming soon" in Settings
+- Dashboard nav grid: I/O Line List, Power Sequence, Signal Flow (3-wide single row)
+- I/O Line List persists to Firebase via useStorage with draft-based editing and save confirmation modal
 
 ## Deployment
 

@@ -1347,7 +1347,7 @@ function SettingsView({ roster, setRoster, currentUser, setCurrentUser, history,
           <ElimLogo size={28} />
           <div>
             <div style={{ fontSize: 14, fontWeight: 700, color: S.text }}>ELIM Production</div>
-            <div style={{ fontSize: 12, color: S.textMuted }}>v5.9.0</div>
+            <div style={{ fontSize: 12, color: S.textMuted }}>v5.10.0</div>
           </div>
         </div>
         <div style={{ fontSize: 12, color: S.textMuted, lineHeight: 1.5 }}>Setup checklist for ELIM Church production team. Data syncs across all devices in real time.</div>
@@ -1886,29 +1886,28 @@ function PowerSeqView() {
   );
 }
 
-function IOListView() {
+function IOListView({ ioConfig, setIoConfig }) {
   const [tab, setTab] = useState("stageBox");
-  const [ioConfig, setIoConfig] = useState(DEFAULT_IO_LINE_LIST);
-  const loaded = true;
-  const [editing, setEditing] = useState(false);
-  const [confirmingReset, setConfirmingReset] = useState(false);
+  const [draft, setDraft] = useState(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
+  const editing = draft !== null;
+  const displayConfig = editing ? draft : ioConfig;
   
   const tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
   
-  if (!loaded) return <div style={{ padding: "16px", textAlign: "center", color: S.textMuted }}>Loading I/O configuration...</div>;
-  
   const updateChannel = (tabKey, index, field, value) => {
-    const updated = JSON.parse(JSON.stringify(ioConfig));
+    const updated = JSON.parse(JSON.stringify(draft));
     if (tabKey === "danteRouting") {
       updated[tabKey].routes[index][field] = value;
     } else {
       updated[tabKey].channels[index][field] = value;
     }
-    setIoConfig(updated);
+    setDraft(updated);
   };
   
   const sortInputsByChannel = () => {
-    const updated = JSON.parse(JSON.stringify(ioConfig));
+    const updated = JSON.parse(JSON.stringify(draft));
     updated.stageBox.channels.sort((a, b) => {
       const aNum = parseInt(a.ch, 10);
       const bNum = parseInt(b.ch, 10);
@@ -1919,11 +1918,11 @@ function IOListView() {
       if (bIsNum) return 1;
       return String(a.ch).localeCompare(String(b.ch));
     });
-    setIoConfig(updated);
+    setDraft(updated);
   };
 
   const isDuplicateChannel = (tabKey, index) => {
-    const channels = tabKey === "danteRouting" ? [] : ioConfig[tabKey].channels;
+    const channels = tabKey === "danteRouting" ? [] : displayConfig[tabKey].channels;
     const current = channels[index];
     if (!current) return false;
     const chVal = tabKey === "stageBox" ? current.ch : current.ch;
@@ -1935,7 +1934,7 @@ function IOListView() {
   };
   
   const addChannel = (tabKey) => {
-    const updated = JSON.parse(JSON.stringify(ioConfig));
+    const updated = JSON.parse(JSON.stringify(draft));
     if (tabKey === "stageBox") {
       const lastCh = updated.stageBox.channels.length > 0 
         ? updated.stageBox.channels[updated.stageBox.channels.length - 1].ch 
@@ -1948,23 +1947,17 @@ function IOListView() {
     } else if (tabKey === "danteRouting") {
       updated.danteRouting.routes.push({ from: "Source", to: "Destination", channels: "", protocol: "Dante" });
     }
-    setIoConfig(updated);
+    setDraft(updated);
   };
   
   const removeChannel = (tabKey, index) => {
-    const updated = JSON.parse(JSON.stringify(ioConfig)); // deep clone
+    const updated = JSON.parse(JSON.stringify(draft));
     if (tabKey === "danteRouting") {
       updated[tabKey].routes.splice(index, 1);
     } else {
       updated[tabKey].channels.splice(index, 1);
     }
-    setIoConfig(updated);
-  };
-  
-  const resetToDefaults = () => {
-    setIoConfig(JSON.parse(JSON.stringify(DEFAULT_IO_LINE_LIST))); // deep clone
-    setConfirmingReset(false);
-    setEditing(false);
+    setDraft(updated);
   };
   
   return (
@@ -1983,39 +1976,46 @@ function IOListView() {
           ))}
         </div>
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <button onClick={() => setEditing(!editing)} style={{
-            flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-            cursor: "pointer", fontFamily: S.sans,
-            background: editing ? S.accentGlow : "rgba(255,235,210,0.04)",
-            border: `1px solid ${editing ? S.accentBorder : S.cardBorder}`,
-            color: editing ? S.accentText : S.textMuted
-          }}>{editing ? "✓ Done Editing" : "✏️ Edit I/O"}</button>
-          {confirmingReset ? (
-            <>
-              <button onClick={resetToDefaults} style={{
-                padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-                cursor: "pointer", fontFamily: S.sans,
-                background: "rgba(232,93,93,0.15)", border: "1px solid rgba(232,93,93,0.3)",
-                color: "#E88A8A"
-              }}>Confirm Reset</button>
-              <button onClick={() => setConfirmingReset(false)} style={{
-                padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
-                fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
-                border: `1px solid ${S.cardBorder}`, color: S.textMuted
-              }}>✕</button>
-            </>
+          {editing ? (
+            <button onClick={() => setShowSaveModal(true)} style={{
+              flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: S.sans,
+              background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText
+            }}>✓ Done Editing</button>
           ) : (
-            <button onClick={() => setConfirmingReset(true)} style={{
+            <button onClick={() => setDraft(JSON.parse(JSON.stringify(ioConfig)))} style={{
+              flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: S.sans,
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
+            }}>✏️ Edit I/O</button>
+          )}
+          {editing && (
+            <button onClick={() => setDraft(null)} style={{
               padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
               fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
               border: `1px solid ${S.cardBorder}`, color: S.textMuted
-            }}>Reset to Defaults</button>
+            }}>Cancel</button>
           )}
         </div>
       </div>
+
+      {showSaveModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setShowSaveModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#1C1A18", border: `1px solid ${S.accentBorder}`, borderRadius: 14, padding: "20px", maxWidth: 340, width: "100%" }}>
+            <div style={{ fontSize: 18, textAlign: "center", marginBottom: 8 }}>🎚️</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: S.accentText, textAlign: "center", marginBottom: 6 }}>Save I/O changes?</div>
+            <div style={{ fontSize: 14, color: S.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 16 }}>This syncs to all devices.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setDraft(null); setShowSaveModal(false); }} style={{ flex: 1, padding: "10px", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: S.sans }}>Discard</button>
+              <button onClick={() => { setIoConfig(draft); setDraft(null); setShowSaveModal(false); }} style={{ flex: 1, padding: "10px", background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 8, color: S.accentText, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: S.sans }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Stage Box Inputs */}
-      {tab === "stageBox" && ioConfig.stageBox.channels.map((ch, i) => (
+      {tab === "stageBox" && displayConfig.stageBox.channels.map((ch, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
           <div style={{ minWidth: 32, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: isDuplicateChannel("stageBox", i) ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.1)", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono }}>
             {editing ? (
@@ -2056,10 +2056,10 @@ function IOListView() {
         </div>
       ))}
       
-      {tab === "stageBox" && <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{ioConfig.stageBox.channels.length} channels</div>}
+      {tab === "stageBox" && <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{displayConfig.stageBox.channels.length} channels</div>}
       
       {/* Wing Direct Inputs */}
-      {tab === "wingInputs" && ioConfig.wingInputs && ioConfig.wingInputs.channels.map((ch, i) => (
+      {tab === "wingInputs" && displayConfig.wingInputs && displayConfig.wingInputs.channels.map((ch, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
           <div style={{ minWidth: 60, fontSize: 12, color: S.accentText, background: S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
             {editing ? (
@@ -2090,7 +2090,7 @@ function IOListView() {
       ))}
       
       {/* Outputs */}
-      {tab === "outputs" && ioConfig.outputs.channels.map((ch, i) => (
+      {tab === "outputs" && displayConfig.outputs.channels.map((ch, i) => (
         <div key={i} style={{ padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ minWidth: 60, fontSize: 12, color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, background: isDuplicateChannel("outputs", i) ? "rgba(239,68,68,0.15)" : S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
@@ -2128,7 +2128,7 @@ function IOListView() {
       ))}
       
       {/* Dante Routing */}
-      {tab === "danteRouting" && ioConfig.danteRouting.routes.map((r, i) => (
+      {tab === "danteRouting" && displayConfig.danteRouting.routes.map((r, i) => (
         <div key={i} style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 6 }}>
           {editing ? (
             <>
@@ -2410,6 +2410,7 @@ function ElimProductionApp() {
   const [roster, setRoster, c6] = useStorage("elim3-roster", DEFAULT_ROSTER);
   const [timerState, setTimerState, c7] = useStorage("elim3-timer", { startedAt: null, accumulated: 0, targetMinutes: null });
   const [history, setHistory, c8] = useStorage("elim3-history", []);
+  const [ioConfig, setIoConfig, c9] = useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST);
   const [checklistData, setChecklistData] = useState(CHECKLIST_DATA);
   const [elapsed, setElapsed] = useState(0);
   const [syncError, setSyncError] = useState(false);
@@ -2535,10 +2536,8 @@ function ElimProductionApp() {
 
   useEffect(() => {
     window.storage.delete("elim3-checklist-data").catch(() => {});
-    window.storage.delete("elim3-io-config").catch(() => {});
     _ls.del("elim_elim3-checklist-data");
     _ls.del("elim_checklist_version");
-    _ls.del("elim_elim3-io-config");
   }, []);
 
   // Derive team lists from roster
@@ -2629,7 +2628,7 @@ function ElimProductionApp() {
     autoStoppedRef.current = true;
   }, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
 
-  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
+  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
 
   const titles = {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
@@ -2699,7 +2698,7 @@ function ElimProductionApp() {
         {view === "my-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} checklistData={checklistData} onNavigate={navigate} />}
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} onNavigate={navigate} />}
         {view === "power-seq" && <PowerSeqView />}
-        {view === "io-list" && <IOListView />}
+        {view === "io-list" && <IOListView ioConfig={ioConfig} setIoConfig={setIoConfig} />}
         {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} onDeleteHistory={deleteHistory} />}
         {view === "network" && <SignalFlowView />}
       </div>

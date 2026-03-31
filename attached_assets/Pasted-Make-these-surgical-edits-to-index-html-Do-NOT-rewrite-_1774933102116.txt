@@ -1,0 +1,149 @@
+Make these surgical edits to index.html. Do NOT rewrite the file — targeted changes only.
+
+1. Add I/O config to useStorage in ElimProductionApp.
+
+Find:
+  const [history, setHistory, c8] = useStorage("elim3-history", []);
+  const [checklistData, setChecklistData] = useState(CHECKLIST_DATA);
+
+Replace with:
+  const [history, setHistory, c8] = useStorage("elim3-history", []);
+  const [ioConfig, setIoConfig, c9] = useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST);
+  const [checklistData, setChecklistData] = useState(CHECKLIST_DATA);
+
+Then find the loaded gate:
+  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8;
+
+Replace with:
+  const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
+
+
+2. Remove I/O cleanup lines.
+
+In the useEffect that deletes stale keys on load, find:
+    window.storage.delete("elim3-checklist-data").catch(() => {});
+    window.storage.delete("elim3-io-config").catch(() => {});
+    _ls.del("elim_elim3-checklist-data");
+    _ls.del("elim_checklist_version");
+    _ls.del("elim_elim3-io-config");
+
+Replace with:
+    window.storage.delete("elim3-checklist-data").catch(() => {});
+    _ls.del("elim_elim3-checklist-data");
+    _ls.del("elim_checklist_version");
+
+Keep all other cleanup lines that may exist in that useEffect (like elim3-repairs). Only remove the two lines referencing elim3-io-config.
+
+
+3. Pass ioConfig props to IOListView.
+
+Find:
+        {view === "io-list" && <IOListView />}
+
+Replace with:
+        {view === "io-list" && <IOListView ioConfig={ioConfig} setIoConfig={setIoConfig} />}
+
+
+4. Refactor IOListView to use draft-based editing with props.
+
+Change the component signature from:
+  function IOListView() {
+
+To:
+  function IOListView({ ioConfig, setIoConfig }) {
+
+Then inside IOListView, make these changes:
+
+A) Remove these lines:
+  const [ioConfig, setIoConfig] = useState(DEFAULT_IO_LINE_LIST);
+  const loaded = true;
+  const [editing, setEditing] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
+
+B) Add these lines in their place:
+  const [draft, setDraft] = useState(null);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+
+C) Add these derived values:
+  const editing = draft !== null;
+  const displayConfig = editing ? draft : ioConfig;
+
+D) Remove the loaded guard:
+  if (!loaded) return <div style={...}>Loading I/O configuration...</div>;
+  (Delete this entire if block)
+
+E) All mutation functions (updateChannel, sortInputsByChannel, addChannel, removeChannel) must operate on draft/setDraft instead of ioConfig/setIoConfig. Specifically, every JSON.parse(JSON.stringify(ioConfig)) inside these functions becomes JSON.parse(JSON.stringify(draft)), and every setIoConfig(updated) becomes setDraft(updated).
+
+F) The isDuplicateChannel function should read from displayConfig instead of ioConfig.
+
+G) Replace all ioConfig references in the JSX render section with displayConfig. For example:
+  - ioConfig.stageBox.channels.map  -->  displayConfig.stageBox.channels.map
+  - ioConfig.wingInputs  -->  displayConfig.wingInputs
+  - ioConfig.outputs.channels.map  -->  displayConfig.outputs.channels.map
+  - ioConfig.danteRouting.routes.map  -->  displayConfig.danteRouting.routes.map
+  - ioConfig.stageBox.channels.length  -->  displayConfig.stageBox.channels.length
+
+H) Replace the edit controls toolbar. Find the div containing the Edit/Reset buttons. Replace the entire toolbar with:
+
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {editing ? (
+            <button onClick={() => setShowSaveModal(true)} style={{
+              flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: S.sans,
+              background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText
+            }}>✓ Done Editing</button>
+          ) : (
+            <button onClick={() => setDraft(JSON.parse(JSON.stringify(ioConfig)))} style={{
+              flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              cursor: "pointer", fontFamily: S.sans,
+              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
+            }}>✏️ Edit I/O</button>
+          )}
+          {editing && (
+            <button onClick={() => setDraft(null)} style={{
+              padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
+              fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
+              border: `1px solid ${S.cardBorder}`, color: S.textMuted
+            }}>Cancel</button>
+          )}
+        </div>
+
+I) Remove the entire reset-to-defaults button and its confirmingReset conditional block. There should be no "Reset to Defaults" or "Confirm Reset" UI remaining in IOListView.
+
+J) Remove the resetToDefaults function entirely.
+
+
+5. Add save confirmation modal.
+
+Right after the edit controls toolbar closing </div> and before the Stage Box Inputs section, add this modal:
+
+      {showSaveModal && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => setShowSaveModal(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "#1C1A18", border: `1px solid ${S.accentBorder}`, borderRadius: 14, padding: "20px", maxWidth: 340, width: "100%" }}>
+            <div style={{ fontSize: 18, textAlign: "center", marginBottom: 8 }}>🎚️</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: S.accentText, textAlign: "center", marginBottom: 6 }}>Save I/O changes?</div>
+            <div style={{ fontSize: 14, color: S.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 16 }}>This syncs to all devices.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => { setDraft(null); setShowSaveModal(false); }} style={{ flex: 1, padding: "10px", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 8, color: S.textMuted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: S.sans }}>Discard</button>
+              <button onClick={() => { setIoConfig(draft); setDraft(null); setShowSaveModal(false); }} style={{ flex: 1, padding: "10px", background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 8, color: S.accentText, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: S.sans }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+6. Bump version.
+
+In the Settings/About section, find the version string (either v5.9.0 or v5.9.1) and change it to v5.10.0.
+
+
+TESTING:
+- Open I/O Line List, tap Edit I/O
+- Change a channel label (e.g. rename "Kick IN" to "Kick Inside")
+- Tap Done Editing — a modal should appear saying "Save I/O changes? This syncs to all devices."
+- Tap Save
+- Refresh the page
+- Go back to I/O Line List and confirm the edit persisted
+- Also test: tap Edit, make a change, tap Cancel — confirm changes are discarded
+- Also test: tap Edit, make a change, tap Done Editing, tap Discard — confirm changes are discarded
