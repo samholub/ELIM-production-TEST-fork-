@@ -1,0 +1,185 @@
+REPLIT TASK PROMPT
+Update the existing DecibelMeterView component with accuracy improvements. The component already exists and works — this prompt upgrades its measurement pipeline and adds new UI elements. Do NOT touch the dashboard card or view route — those are already wired up.
+
+Find the existing DecibelMeterView function and replace the ENTIRE function (from function DecibelMeterView() through its closing }) with this:
+jsxfunction DecibelMeterView() {
+  const [dbfs, setDbfs] = useState(-60);
+  const [dba, setDba] = useState(-60);
+  const [peak, setPeak] = useState(-60);
+  const [peakA, setPeakA] = useState(-60);
+  const [calOffset, setCalOffset] = useState(0);
+  const [error, setError] = useState(null);
+  const streamRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const smoothRef = useRef(-60);
+  const smoothARef = useRef(-60);
+  const peakRef = useRef(-60);
+  const peakARef = useRef(-60);
+  const peakTimeRef = useRef(0);
+  const peakATimeRef = useRef(0);
+
+  // IEC 61672 A-weighting formula
+  const aWeight = (f) => {
+    if (f < 10) return 0;
+    const f2 = f * f;
+    const num = 12194 * 12194 * f2 * f2;
+    const den = (f2 + 20.6 * 20.6) * Math.sqrt((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)) * (f2 + 12194 * 12194);
+    const ra = num / den;
+    return 2.0 + 20 * Math.log10(ra);
+  };
+
+  const start = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, autoGainControl: false, noiseSuppression: false }
+      });
+      streamRef.current = stream;
+      const ctx = new AudioContext();
+      ctxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 4096;
+      analyser.smoothingTimeConstant = 0;
+      source.connect(analyser);
+      const timeBuf = new Float32Array(analyser.fftSize);
+      const freqBuf = new Float32Array(analyser.frequencyBinCount);
+      const sampleRate = ctx.sampleRate;
+
+      const loop = () => {
+        // --- dBFS from time-domain RMS ---
+        analyser.getFloatTimeDomainData(timeBuf);
+        let sum = 0;
+        for (let i = 0; i < timeBuf.length; i++) sum += timeBuf[i] * timeBuf[i];
+        const rms = Math.sqrt(sum / timeBuf.length);
+        const rawDbfs = rms > 0 ? 20 * Math.log10(rms) : -60;
+        const clampedDbfs = Math.max(-60, Math.min(0, rawDbfs));
+
+        // --- dBA from frequency-domain with A-weighting ---
+        analyser.getFloatFrequencyData(freqBuf);
+        let aSum = 0;
+        const binWidth = sampleRate / analyser.fftSize;
+        for (let i = 1; i < freqBuf.length; i++) {
+          const freq = i * binWidth;
+          const magDb = freqBuf[i]; // already in dB
+          const weighted = magDb + aWeight(freq);
+          aSum += Math.pow(10, weighted / 10);
+        }
+        const rawDba = aSum > 0 ? 10 * Math.log10(aSum) : -60;
+        const clampedDba = Math.max(-60, Math.min(0, rawDba));
+
+        // --- Smoothing (EMA) ---
+        smoothRef.current = smoothRef.current * 0.85 + clampedDbfs * 0.15;
+        smoothARef.current = smoothARef.current * 0.85 + clampedDba * 0.15;
+
+        // --- Peak hold with 2s hold then 3dB/s decay ---
+        const now = Date.now();
+        if (clampedDbfs > peakRef.current) { peakRef.current = clampedDbfs; peakTimeRef.current = now; }
+        else if (now - peakTimeRef.current > 2000) { peakRef.current = Math.max(clampedDbfs, peakRef.current - 0.05); }
+        if (clampedDba > peakARef.current) { peakARef.current = clampedDba; peakATimeRef.current = now; }
+        else if (now - peakATimeRef.current > 2000) { peakARef.current = Math.max(clampedDba, peakARef.current - 0.05); }
+
+        setDbfs(smoothRef.current);
+        setDba(smoothARef.current);
+        setPeak(peakRef.current);
+        setPeakA(peakARef.current);
+        rafRef.current = requestAnimationFrame(loop);
+      };
+      rafRef.current = requestAnimationFrame(loop);
+      setError(null);
+    } catch (e) {
+      setError(e.name === "NotAllowedError" ? "Microphone access denied" : "Could not access microphone");
+    }
+  }, []);
+
+  useEffect(() => { start(); return () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    if (ctxRef.current) ctxRef.current.close();
+  }; }, []);
+
+  if (error) return React.createElement("div", { style: { padding: 24, textAlign: "center" } },
+    React.createElement("div", { style: { fontSize: 16, color: S.text, marginBottom: 16, fontFamily: S.sans } }, error),
+    React.createElement("div", { onClick: start, style: { display: "inline-block", padding: "10px 20px", background: S.accent, color: "#fff", borderRadius: 8, cursor: "pointer", fontFamily: S.sans, fontSize: 14, fontWeight: 600 } }, "Allow Microphone")
+  );
+
+  const pct = ((dbfs + 60) / 60) * 100;
+  const peakPct = ((peak + 60) / 60) * 100;
+  const barColor = dbfs > -6 ? "#ef4444" : dbfs > -20 ? "#f59e0b" : S.success;
+  const peakColor = peak > -6 ? "#ef4444" : peak > -20 ? "#f59e0b" : S.success;
+  const splEst = dba + 94 + calOffset;
+
+  return React.createElement("div", { style: { padding: "16px 16px 24px" } },
+
+    // Peak row
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, fontFamily: S.mono, fontSize: 13 } },
+      React.createElement("span", { style: { color: S.textMuted } }, "dBFS"),
+      React.createElement("span", { style: { color: peakColor } }, `Peak: ${peak.toFixed(1)} dB`)
+    ),
+
+    // Meter bar
+    React.createElement("div", { style: { position: "relative", height: 32, background: S.cardBorder, borderRadius: 6, overflow: "hidden" } },
+      React.createElement("div", { style: {
+        position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 6,
+        width: `${Math.max(0, pct)}%`, background: barColor, transition: "width 0.08s linear, background 0.15s"
+      }}),
+      React.createElement("div", { style: {
+        position: "absolute", top: 0, bottom: 0, width: 3, borderRadius: 1,
+        left: `calc(${Math.max(0, peakPct)}% - 1.5px)`, background: peakColor, opacity: 0.9
+      }})
+    ),
+
+    // Scale labels
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4, fontFamily: S.mono, fontSize: 10, color: S.textMuted } },
+      React.createElement("span", null, "-60"),
+      React.createElement("span", null, "-40"),
+      React.createElement("span", null, "-20"),
+      React.createElement("span", null, "0")
+    ),
+
+    // Big dBFS readout
+    React.createElement("div", { style: { textAlign: "center", marginTop: 16 } },
+      React.createElement("span", { style: { fontSize: 48, fontWeight: 700, fontFamily: S.mono, color: barColor, transition: "color 0.15s" } }, dbfs.toFixed(1)),
+      React.createElement("span", { style: { fontSize: 20, fontFamily: S.mono, color: S.textMuted, marginLeft: 4 } }, "dBFS")
+    ),
+
+    // dBA + estimated SPL row
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-around", marginTop: 16, padding: "12px 0", borderTop: `1px solid ${S.cardBorder}`, borderBottom: `1px solid ${S.cardBorder}` } },
+      React.createElement("div", { style: { textAlign: "center" } },
+        React.createElement("div", { style: { fontSize: 11, color: S.textMuted, fontFamily: S.sans, marginBottom: 2 } }, "A-Weighted"),
+        React.createElement("div", { style: { fontSize: 24, fontWeight: 700, fontFamily: S.mono, color: S.text } }, `${dba.toFixed(1)}`),
+        React.createElement("div", { style: { fontSize: 11, color: S.textMuted, fontFamily: S.mono } }, "dBA"),
+        React.createElement("div", { style: { fontSize: 10, color: S.textMuted, fontFamily: S.mono, marginTop: 2 } }, `Peak: ${peakA.toFixed(1)}`)
+      ),
+      React.createElement("div", { style: { textAlign: "center" } },
+        React.createElement("div", { style: { fontSize: 11, color: S.textMuted, fontFamily: S.sans, marginBottom: 2 } }, "Est. SPL"),
+        React.createElement("div", { style: { fontSize: 24, fontWeight: 700, fontFamily: S.mono, color: splEst > 85 ? "#ef4444" : splEst > 70 ? "#f59e0b" : S.success } }, `${splEst.toFixed(0)}`),
+        React.createElement("div", { style: { fontSize: 11, color: S.textMuted, fontFamily: S.mono } }, "dBA SPL")
+      )
+    ),
+
+    // Calibration offset controls
+    React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 12 } },
+      React.createElement("div", { onClick: () => setCalOffset(c => c - 1), style: { width: 36, height: 36, borderRadius: 8, background: S.card, border: `1px solid ${S.cardBorder}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, fontWeight: 700, color: S.text, fontFamily: S.mono } }, "−"),
+      React.createElement("div", { style: { textAlign: "center", fontFamily: S.mono, fontSize: 12, color: S.textMuted, minWidth: 90 } },
+        React.createElement("div", null, `Cal: ${calOffset >= 0 ? "+" : ""}${calOffset} dB`),
+        React.createElement("div", { style: { fontSize: 10 } }, "tap to adjust")
+      ),
+      React.createElement("div", { onClick: () => setCalOffset(c => c + 1), style: { width: 36, height: 36, borderRadius: 8, background: S.card, border: `1px solid ${S.cardBorder}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 18, fontWeight: 700, color: S.text, fontFamily: S.mono } }, "+")
+    ),
+
+    // Disclaimer
+    React.createElement("div", { style: { textAlign: "center", marginTop: 12, fontSize: 10, color: S.textMuted, fontFamily: S.sans, opacity: 0.6 } },
+      "Calibrate SPL against Wing meters. AGC/noise suppression disabled."
+    )
+  );
+}
+
+What NOT to change:
+
+Do not touch the dashboard card block (the conditional currentUser === "Sam" || currentUser === "Tyler" card)
+Do not touch the {view === "db-meter" && <DecibelMeterView />} route
+Do not touch DASHBOARD_CARDS, the nav grid, or any other component
+Do not change the S style object
+Do not add any imports, external libraries, or build tools
+The replacement is the ENTIRE DecibelMeterView function — find its opening function DecibelMeterView() and its matching closing brace, replace everything in between
