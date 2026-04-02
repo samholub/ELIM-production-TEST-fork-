@@ -1888,6 +1888,55 @@ function PowerSeqView() {
   );
 }
 
+function IODropdown({ value, options, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler);
+    };
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} style={{ position: "relative", display: "inline-block" }}>
+      <div onClick={() => setOpen(!open)} style={{
+        display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderRadius: 4, cursor: "pointer",
+        background: "rgba(255,220,180,0.04)", border: `1px solid ${S.cardBorder}`,
+        fontSize: 11, fontFamily: S.mono, color: S.textDim
+      }}>
+        <span>{value}</span>
+        <span style={{ color: S.textMuted, fontSize: 9 }}>▾</span>
+      </div>
+      {open && (
+        <div style={{
+          position: "absolute", right: 0, top: "100%", marginTop: 4, zIndex: 1000,
+          background: "#1C1A18", border: `1px solid ${S.cardBorder}`, borderRadius: 8,
+          minWidth: 100, boxShadow: "0 8px 24px rgba(0,0,0,0.5)", overflow: "hidden"
+        }}>
+          {options.map(opt => (
+            <div key={opt} onClick={() => { onChange(opt); setOpen(false); }} style={{
+              padding: "8px 12px", fontSize: 13, cursor: "pointer", fontFamily: S.mono,
+              color: opt === value ? S.accent : S.text, fontWeight: opt === value ? 600 : 400
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = S.accentGlow}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              {opt === value ? `✓ ${opt}` : opt}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STAGE_BOX_GROUPS = [
   { label: "Drums", range: [1, 12] },
   { label: "Instruments", range: [13, 25] },
@@ -1902,11 +1951,14 @@ const isIEM = (dest) => {
   return d.includes("in-ear") || d.includes("in ear");
 };
 
-function IOListView({ ioConfig, setIoConfig }) {
+function IOListView({ ioConfig, setIoConfig, currentUser }) {
   const [tab, setTab] = useState("stageBox");
   const [draft, setDraft] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [stageBoxSub, setStageBoxSub] = useState("inputs");
+  const [searchText, setSearchText] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
 
   const editing = draft !== null;
   const displayConfig = editing ? draft : ioConfig;
@@ -1977,6 +2029,16 @@ function IOListView({ ioConfig, setIoConfig }) {
     setDraft(updated);
   };
   
+  const searchLower = searchText.trim().toLowerCase();
+
+  const matchesSearch = (item, type) => {
+    if (!searchLower) return false;
+    if (type === "dante") {
+      return [item.from, item.to, item.channels, item.protocol].some(f => (f || "").toLowerCase().includes(searchLower));
+    }
+    return [String(item.ch), item.label, item.notes, item.type, item.destination, item.inEarSnake].some(f => (f || "").toLowerCase().includes(searchLower));
+  };
+
   const renderGroupHeader = (label, count) => (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px 4px", marginTop: 8 }}>
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: S.textMuted }}>{label}</div>
@@ -2000,29 +2062,60 @@ function IOListView({ ioConfig, setIoConfig }) {
             }}>{t.label}</button>
           ))}
         </div>
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {editing ? (
-            <button onClick={() => setShowSaveModal(true)} style={{
-              flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-              cursor: "pointer", fontFamily: S.sans,
-              background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText
-            }}>✓ Done Editing</button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {searchOpen ? (
+            <div style={{ flex: 1, position: "relative" }}>
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                onBlur={() => { if (!searchText) setSearchOpen(false); }}
+                placeholder="Search I/O..."
+                style={{
+                  width: "100%", padding: "8px 32px 8px 12px", borderRadius: 8, fontSize: 14,
+                  background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`,
+                  color: S.text, fontFamily: S.sans, outline: "none", boxSizing: "border-box"
+                }}
+              />
+              {searchText && (
+                <button onClick={() => { setSearchText(""); searchInputRef.current && searchInputRef.current.focus(); }} style={{
+                  position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                  background: "rgba(255,220,180,0.1)", border: "none", borderRadius: 10,
+                  width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center",
+                  color: S.textMuted, fontSize: 12, cursor: "pointer", padding: 0
+                }}>✕</button>
+              )}
+            </div>
           ) : (
-            <button onClick={() => setDraft(JSON.parse(JSON.stringify(ioConfig)))} style={{
-              flex: 1, padding: "7px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600,
-              cursor: "pointer", fontFamily: S.sans,
-              background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
-            }}>✏️ Edit I/O</button>
+            <div style={{ flex: 1 }}>
+              <button onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current && searchInputRef.current.focus(), 0); }} style={{
+                padding: "8px 12px", borderRadius: 8, fontSize: 15, cursor: "pointer", fontFamily: S.sans,
+                background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
+              }}>🔍</button>
+            </div>
           )}
-          {editing && (
-            <button onClick={() => setDraft(null)} style={{
-              padding: "7px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer",
-              fontFamily: S.sans, background: "rgba(255,235,210,0.04)",
-              border: `1px solid ${S.cardBorder}`, color: S.textMuted
-            }}>Cancel</button>
+          {(currentUser === "Sam" || currentUser === "Bri") && (
+            editing ? (
+              <React.Fragment>
+                <button onClick={() => setShowSaveModal(true)} style={{
+                  padding: "8px 12px", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: S.sans,
+                  background: S.accentGlow, border: `1px solid ${S.accentBorder}`, color: S.accentText, whiteSpace: "nowrap"
+                }}>✓ Done</button>
+                <button onClick={() => setDraft(null)} style={{
+                  padding: "8px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: S.sans,
+                  background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
+                }}>Cancel</button>
+              </React.Fragment>
+            ) : (
+              <button onClick={() => setDraft(JSON.parse(JSON.stringify(ioConfig)))} style={{
+                padding: "8px 12px", borderRadius: 8, fontSize: 13, cursor: "pointer", fontFamily: S.sans,
+                background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, color: S.textMuted
+              }}>✏️</button>
+            )
           )}
         </div>
-        {tab === "stageBox" && (
+        {!searchLower && tab === "stageBox" && (
           <div style={{ display: "flex", gap: 0, marginTop: 8, background: "rgba(255,235,210,0.04)", borderRadius: 8, border: `1px solid ${S.cardBorder}`, padding: 2 }}>
             {[{ id: "inputs", label: "Inputs" }, { id: "outputs", label: "Outputs" }].map(sub => (
               <button key={sub.id} onClick={() => setStageBoxSub(sub.id)} style={{
@@ -2051,8 +2144,68 @@ function IOListView({ ioConfig, setIoConfig }) {
         </div>
       )}
       
+      {/* Cross-tab search results */}
+      {searchLower && (() => {
+        const sbMatches = displayConfig.stageBox.channels.filter(ch => matchesSearch(ch, "channel"));
+        const wingMatches = (displayConfig.wingInputs?.channels || []).filter(ch => matchesSearch(ch, "channel"));
+        const outMatches = displayConfig.outputs.channels.filter(ch => matchesSearch(ch, "channel"));
+        const danteMatches = displayConfig.danteRouting.routes.filter(r => matchesSearch(r, "dante"));
+        const totalMatches = sbMatches.length + wingMatches.length + outMatches.length + danteMatches.length;
+
+        if (totalMatches === 0) {
+          return <div style={{ textAlign: "center", color: S.textMuted, padding: "24px 0", fontSize: 14 }}>No matches for "{searchText.trim()}"</div>;
+        }
+
+        const renderSearchGroupHeader = (label, count) => (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px 4px", marginTop: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: S.textMuted }}>{label}</div>
+            <div style={{ flex: 1, height: 1, background: S.cardBorder }} />
+            <div style={{ fontSize: 11, color: S.textDim }}>{count}</div>
+          </div>
+        );
+
+        const renderSearchChannel = (ch, section) => (
+          <div key={`${section}-${ch.ch}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+            <div style={{ minWidth: section === "stageBox" ? 32 : 60, fontSize: 12, color: S.accentText, background: section === "stageBox" ? "rgba(16,185,129,0.1)" : S.accentGlow, padding: "3px 8px", borderRadius: section === "stageBox" ? 6 : 4, fontFamily: S.mono, textAlign: "center", fontWeight: section === "stageBox" ? 700 : 600,
+              ...(section === "stageBox" ? { color: S.success, height: 28, display: "flex", alignItems: "center", justifyContent: "center" } : {})
+            }}>{ch.ch}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
+              {ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}
+              {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
+              {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+            </div>
+            {ch.type && <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>}
+          </div>
+        );
+
+        const renderSearchDante = (r) => (
+          <div key={`dante-${r.from}-${r.to}`} style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 6 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{r.from}</div>
+              <div style={{ color: S.accent }}>→</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{r.to}</div>
+            </div>
+            <div style={{ display: "flex", gap: 8, fontSize: 12 }}>
+              <span style={{ color: S.textMuted }}>{r.channels}</span>
+              <span style={{ color: S.accent, background: S.accentGlow, padding: "1px 6px", borderRadius: 4, fontFamily: S.mono, fontSize: 11 }}>{r.protocol}</span>
+            </div>
+          </div>
+        );
+
+        return (
+          <>
+            <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginBottom: 4 }}>{totalMatches} result{totalMatches !== 1 ? "s" : ""}</div>
+            {sbMatches.length > 0 && <>{renderSearchGroupHeader("Stage Box Inputs", sbMatches.length)}{sbMatches.map(ch => renderSearchChannel(ch, "stageBox"))}</>}
+            {wingMatches.length > 0 && <>{renderSearchGroupHeader("Direct Inputs", wingMatches.length)}{wingMatches.map(ch => renderSearchChannel(ch, "wing"))}</>}
+            {outMatches.length > 0 && <>{renderSearchGroupHeader("Outputs", outMatches.length)}{outMatches.map(ch => renderSearchChannel(ch, "outputs"))}</>}
+            {danteMatches.length > 0 && <>{renderSearchGroupHeader("Dante Routing", danteMatches.length)}{danteMatches.map(renderSearchDante)}</>}
+          </>
+        );
+      })()}
+
       {/* Stage Box — Inputs sub-view */}
-      {tab === "stageBox" && stageBoxSub === "inputs" && (() => {
+      {!searchLower && tab === "stageBox" && stageBoxSub === "inputs" && (() => {
         const channels = displayConfig.stageBox.channels;
         const indexedChannels = channels.map((ch, i) => ({ ...ch, _origIndex: i }));
         const grouped = STAGE_BOX_GROUPS.map(g => ({
@@ -2089,13 +2242,7 @@ function IOListView({ ioConfig, setIoConfig }) {
                 )}
               </div>
               {editing ? (
-                <select value={ch.type} onChange={e => updateChannel("stageBox", i, "type", e.target.value)}
-                  style={{ background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 4, color: S.textDim, fontSize: 11, padding: "2px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
-                  <option value="XLR">XLR</option>
-                  <option value="DI/XLR">DI/XLR</option>
-                  <option value="Line">Line</option>
-                  <option value="1/4">1/4"</option>
-                </select>
+                <IODropdown value={ch.type} options={["XLR", "DI/XLR", "Line", "1/4\""]} onChange={val => updateChannel("stageBox", i, "type", val)} />
               ) : (
                 <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
               )}
@@ -2137,7 +2284,7 @@ function IOListView({ ioConfig, setIoConfig }) {
       })()}
       
       {/* Wing Direct Inputs */}
-      {tab === "wingInputs" && displayConfig.wingInputs && displayConfig.wingInputs.channels.map((ch, i) => (
+      {!searchLower && tab === "wingInputs" && displayConfig.wingInputs && displayConfig.wingInputs.channels.map((ch, i) => (
         <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
           <div style={{ minWidth: 60, fontSize: 12, color: S.accentText, background: S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
             {editing ? (
@@ -2168,7 +2315,7 @@ function IOListView({ ioConfig, setIoConfig }) {
       ))}
       
       {/* Stage Box — Outputs sub-view */}
-      {tab === "stageBox" && stageBoxSub === "outputs" && (() => {
+      {!searchLower && tab === "stageBox" && stageBoxSub === "outputs" && (() => {
         const channels = displayConfig.outputs.channels;
         const indexedChannels = channels.map((ch, i) => ({ ...ch, _origIndex: i }));
         const iemChannels = indexedChannels.filter(ch => isIEM(ch.destination));
@@ -2242,7 +2389,7 @@ function IOListView({ ioConfig, setIoConfig }) {
       })()}
       
       {/* Dante Routing */}
-      {tab === "danteRouting" && displayConfig.danteRouting.routes.map((r, i) => (
+      {!searchLower && tab === "danteRouting" && displayConfig.danteRouting.routes.map((r, i) => (
         <div key={i} style={{ padding: "14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 10, marginBottom: 6 }}>
           {editing ? (
             <>
@@ -2260,13 +2407,7 @@ function IOListView({ ioConfig, setIoConfig }) {
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={r.channels} onChange={e => updateChannel("danteRouting", i, "channels", e.target.value)} placeholder="Channels description"
                   style={{ flex: 1, background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
-                <select value={r.protocol} onChange={e => updateChannel("danteRouting", i, "protocol", e.target.value)}
-                  style={{ background: S.accentGlow, border: `1px solid ${S.accentBorder}`, borderRadius: 4, color: S.accent, fontSize: 11, padding: "1px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
-                  <option value="Dante">Dante</option>
-                  <option value="Analog">Analog</option>
-                  <option value="AES50">AES50</option>
-                  <option value="USB">USB</option>
-                </select>
+                <IODropdown value={r.protocol} options={["Dante", "Analog", "AES50", "USB"]} onChange={val => updateChannel("danteRouting", i, "protocol", val)} />
               </div>
             </>
           ) : (
@@ -2285,7 +2426,7 @@ function IOListView({ ioConfig, setIoConfig }) {
         </div>
       ))}
       
-      {editing && tab === "danteRouting" && (
+      {!searchLower && editing && tab === "danteRouting" && (
         <button onClick={() => addChannel("danteRouting")} style={{
           width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
           cursor: "pointer", fontFamily: S.sans, marginTop: 8,
@@ -2811,7 +2952,7 @@ function ElimProductionApp() {
         {view === "my-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} checklistData={checklistData} onNavigate={navigate} />}
         {view === "crew-tasks" && <MyTasksView {...sharedProps} elapsed={elapsed} running={running} setRunning={setRunning} remaining={remaining} targetSeconds={targetSeconds} targetUser={checklistFilter} checklistData={checklistData} onNavigate={navigate} />}
         {view === "power-seq" && <PowerSeqView />}
-        {view === "io-list" && <IOListView ioConfig={ioConfig} setIoConfig={setIoConfig} />}
+        {view === "io-list" && <IOListView ioConfig={ioConfig} setIoConfig={setIoConfig} currentUser={currentUser} />}
         {view === "settings" && <SettingsView roster={roster} setRoster={setRoster} currentUser={currentUser} setCurrentUser={selectUser} history={history} onNewWeek={newWeek} assignments={assignments} setAssignments={setAssignments} onSetupComplete={setupComplete} onDeleteHistory={deleteHistory} />}
         {view === "network" && <SignalFlowView />}
       </div>
