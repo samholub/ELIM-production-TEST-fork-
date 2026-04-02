@@ -1110,7 +1110,8 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
               borderRadius: 8, borderLeft: "3px solid rgba(255,220,180,0.12)",
               color: S.textDim, fontSize: 13, lineHeight: 1.4,
               overflow: "hidden", textOverflow: "ellipsis",
-              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+              wordBreak: "break-word", overflowWrap: "break-word"
             }}>
               {item.detail}
             </div>
@@ -1123,7 +1124,8 @@ const CheckItem = React.memo(function CheckItem({ item, checked, onToggle, assig
               borderRadius: "0 6px 6px 0",
               fontSize: 13, color: S.textDim, lineHeight: 1.4,
               overflow: "hidden", textOverflow: "ellipsis",
-              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical"
+              display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+              wordBreak: "break-word", overflowWrap: "break-word"
             }}>
               📌 {taskNote}
             </div>
