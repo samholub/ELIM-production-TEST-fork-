@@ -1,0 +1,154 @@
+REPLIT TASK PROMPT
+Three independent defensive improvements to the ELIM Production App. Each touches a different part of the code with no overlap.
+
+CHANGE 1: Add sanitize function and wire it into useStorage
+Find the useStorage function (starts around line 662). Immediately ABOVE it, add this new function:
+jsxconst SCHEMA_TYPES = {
+  "elim3-checks": "record-boolean",
+  "elim3-assign": "record-string",
+  "elim3-comp": "record-number",
+  "elim3-notes": "record-string",
+  "elim3-photos": "record-string",
+  "elim3-roster": "array-string",
+  "elim3-timer": "object",
+  "elim3-history": "array",
+  "elim3-io-config": "object",
+};
+
+function sanitize(key, data, initial) {
+  const schema = SCHEMA_TYPES[key];
+  if (!schema) return data;
+  try {
+    if (schema === "array" || schema === "array-string") {
+      if (!Array.isArray(data)) { console.warn("sanitize: expected array for", key); return initial; }
+      if (schema === "array-string") {
+        const cleaned = data.filter(v => typeof v === "string");
+        if (cleaned.length !== data.length) console.warn("sanitize: dropped non-string entries from", key);
+        return cleaned;
+      }
+      return data;
+    }
+    if (schema === "object") {
+      if (typeof data !== "object" || data === null || Array.isArray(data)) {
+        console.warn("sanitize: expected object for", key);
+        return initial;
+      }
+      return data;
+    }
+    if (schema.startsWith("record-")) {
+      if (typeof data !== "object" || data === null || Array.isArray(data)) {
+        console.warn("sanitize: expected record for", key);
+        return initial;
+      }
+      const expectedType = schema.split("-")[1];
+      const cleaned = {};
+      let dropped = 0;
+      for (const k of Object.keys(data)) {
+        if (typeof data[k] === expectedType) { cleaned[k] = data[k]; }
+        else { dropped++; }
+      }
+      if (dropped > 0) console.warn("sanitize: dropped", dropped, "invalid fields from", key);
+      return cleaned;
+    }
+  } catch (e) {
+    console.warn("sanitize: error validating", key, e);
+    return initial;
+  }
+  return data;
+}
+Now modify useStorage in TWO places:
+Place A — initial load (inside the .then(r => { block): Find these two lines inside useStorage:
+jsx          const parsed = JSON.parse(r.value);
+          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
+The FIRST occurrence (in the window.storage.get callback, NOT the elim-sync handler). Replace with:
+jsx          const parsed = JSON.parse(r.value);
+          if (parsed != null) { const clean = sanitize(key, parsed, initial); setVal(clean); prevRef.current = clean; }
+Place B — sync handler (inside the elim-sync event listener): Find the SECOND occurrence of the same two lines (inside the handler function). Replace with:
+jsx          const parsed = JSON.parse(e.detail.value);
+          if (parsed != null) { const clean = sanitize(key, parsed, initial); setVal(clean); prevRef.current = clean; }
+Note: the initial parameter is already available in the useStorage closure scope, so no changes needed to pass it.
+
+CHANGE 2: Add schema versioning scaffold
+Find the SCHEMA_TYPES constant you just added in Change 1. Immediately BELOW the sanitize function (and ABOVE useStorage), add:
+jsxconst SCHEMA_VERSION = 1;
+const MIGRATIONS = [
+  // Future migrations go here as functions: (storageGet, storageSet) => Promise
+  // Index 0 = migration from version 0→1, index 1 = migration from 1→2, etc.
+];
+
+async function runMigrations() {
+  try {
+    let stored = 0;
+    try {
+      const r = await window.storage.get("elim3-schema-version", true);
+      if (r?.value) stored = JSON.parse(r.value);
+    } catch (e) {}
+    if (typeof stored !== "number" || stored < 0) stored = 0;
+    if (stored >= SCHEMA_VERSION) return;
+    for (let i = stored; i < SCHEMA_VERSION && i < MIGRATIONS.length; i++) {
+      console.log("Running migration", i, "→", i + 1);
+      await MIGRATIONS[i](
+        (k) => window.storage.get(k, true).then(r => r?.value ? JSON.parse(r.value) : null),
+        (k, v) => window.storage.set(k, JSON.stringify(v), true)
+      );
+    }
+    await window.storage.set("elim3-schema-version", JSON.stringify(SCHEMA_VERSION), true);
+    console.log("Schema version set to", SCHEMA_VERSION);
+  } catch (e) {
+    console.warn("Migration error:", e);
+  }
+}
+Now wire it into the app. Find the ElimProductionApp function. Look for the line:
+jsxconst loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
+Immediately AFTER that line, add:
+jsx  const migrationsRun = useRef(false);
+  useEffect(() => {
+    if (loaded && !migrationsRun.current) {
+      migrationsRun.current = true;
+      runMigrations();
+    }
+  }, [loaded]);
+
+CHANGE 3: Add "Export Backup" button to ErrorBoundary
+Find the ErrorBoundary class. In its render() method, find the existing reload button element that contains the text 'Tap to Reload'. After that button element (but still inside the same parent div with maxWidth: 320), add a comma and this new element:
+jsx,
+React.createElement('button', {
+  onClick: async () => {
+    try {
+      const keys = ["elim3-checks", "elim3-assign", "elim3-comp", "elim3-notes", "elim3-photos", "elim3-roster", "elim3-timer", "elim3-history", "elim3-io-config", "elim3-schema-version"];
+      const backup = { exportedAt: new Date().toISOString(), error: String(this.state.error) };
+      for (const k of keys) {
+        try {
+          const r = await window.storage.get(k, true);
+          backup[k] = r?.value ? JSON.parse(r.value) : null;
+        } catch (e) { backup[k] = "READ_ERROR"; }
+      }
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `elim-backup-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert("Export failed: " + e.message); }
+  },
+  style: {
+    padding: '12px 28px', borderRadius: 10, fontSize: 15, fontWeight: 700,
+    background: 'rgba(92,184,122,0.15)', border: '1px solid rgba(92,184,122,0.3)',
+    color: '#5CB87A', cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif",
+    marginTop: 12, display: 'block', width: '100%'
+  }
+}, 'Export Backup')
+Also update the text above the buttons. Find:
+jsx'The app hit an unexpected error. Your data is safe. Tap below to reload.'
+Replace with:
+jsx'The app hit an unexpected error. Your data is safe. Export a backup before reloading if needed.'
+
+What NOT to change:
+
+Do not modify any component other than useStorage and ErrorBoundary
+Do not change the S style object
+Do not modify the save callback inside useStorage — sanitization is read-path only
+Do not change how loaded is computed (c1 && c2 && ...)
+Do not change the storage key names or the shared parameter defaults
+Do not add any external libraries or imports

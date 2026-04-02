@@ -659,6 +659,86 @@ const ALL_ITEMS = CHECKLIST_DATA.flatMap(s => s.items.map(i => ({ ...i, section:
 // ═══════════════════════════════════════════
 // HOOKS
 // ═══════════════════════════════════════════
+const SCHEMA_TYPES = {
+  "elim3-checks": "record-boolean",
+  "elim3-assign": "record-string",
+  "elim3-comp": "record-number",
+  "elim3-notes": "record-string",
+  "elim3-photos": "record-string",
+  "elim3-roster": "array",
+  "elim3-timer": "object",
+  "elim3-history": "array",
+  "elim3-io-config": "object",
+};
+
+function sanitize(key, data, initial) {
+  const schema = SCHEMA_TYPES[key];
+  if (!schema) return data;
+  try {
+    if (schema === "array" || schema === "array-string") {
+      if (!Array.isArray(data)) { console.warn("sanitize: expected array for", key); return initial; }
+      if (schema === "array-string") {
+        const cleaned = data.filter(v => typeof v === "string");
+        if (cleaned.length !== data.length) console.warn("sanitize: dropped non-string entries from", key);
+        return cleaned;
+      }
+      return data;
+    }
+    if (schema === "object") {
+      if (typeof data !== "object" || data === null || Array.isArray(data)) {
+        console.warn("sanitize: expected object for", key);
+        return initial;
+      }
+      return data;
+    }
+    if (schema.startsWith("record-")) {
+      if (typeof data !== "object" || data === null || Array.isArray(data)) {
+        console.warn("sanitize: expected record for", key);
+        return initial;
+      }
+      const expectedType = schema.split("-")[1];
+      const cleaned = {};
+      let dropped = 0;
+      for (const k of Object.keys(data)) {
+        if (typeof data[k] === expectedType) { cleaned[k] = data[k]; }
+        else { dropped++; }
+      }
+      if (dropped > 0) console.warn("sanitize: dropped", dropped, "invalid fields from", key);
+      return cleaned;
+    }
+  } catch (e) {
+    console.warn("sanitize: error validating", key, e);
+    return initial;
+  }
+  return data;
+}
+
+const SCHEMA_VERSION = 1;
+const MIGRATIONS = [];
+
+async function runMigrations() {
+  try {
+    let stored = 0;
+    try {
+      const r = await window.storage.get("elim3-schema-version", true);
+      if (r?.value) stored = JSON.parse(r.value);
+    } catch (e) {}
+    if (typeof stored !== "number" || stored < 0) stored = 0;
+    if (stored >= SCHEMA_VERSION) return;
+    for (let i = stored; i < SCHEMA_VERSION && i < MIGRATIONS.length; i++) {
+      console.log("Running migration", i, "→", i + 1);
+      await MIGRATIONS[i](
+        (k) => window.storage.get(k, true).then(r => r?.value ? JSON.parse(r.value) : null),
+        (k, v) => window.storage.set(k, JSON.stringify(v), true)
+      );
+    }
+    await window.storage.set("elim3-schema-version", JSON.stringify(SCHEMA_VERSION), true);
+    console.log("Schema version set to", SCHEMA_VERSION);
+  } catch (e) {
+    console.warn("Migration error:", e);
+  }
+}
+
 function useStorage(key, initial, shared = true) {
   const [val, setVal] = useState(initial);
   const [loaded, setLoaded] = useState(false);
@@ -668,7 +748,7 @@ function useStorage(key, initial, shared = true) {
       if (r?.value) {
         try {
           const parsed = JSON.parse(r.value);
-          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
+          if (parsed != null) { const clean = sanitize(key, parsed, initial); setVal(clean); prevRef.current = clean; }
         } catch(err) {}
       }
     }).catch(() => {}).finally(() => setLoaded(true));
@@ -677,7 +757,7 @@ function useStorage(key, initial, shared = true) {
       if (e.detail?.key === key && e.detail?.value) {
         try {
           const parsed = JSON.parse(e.detail.value);
-          if (parsed != null) { setVal(parsed); prevRef.current = parsed; }
+          if (parsed != null) { const clean = sanitize(key, parsed, initial); setVal(clean); prevRef.current = clean; }
         } catch(err) {}
       }
     };
@@ -2858,7 +2938,7 @@ class ErrorBoundary extends React.Component {
           React.createElement('div', { style: { fontSize: 40, marginBottom: 16 } }, '⚠️'),
           React.createElement('div', { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 } }, 'Something went wrong'),
           React.createElement('div', { style: { fontSize: 14, color: '#B8A894', marginBottom: 24, lineHeight: 1.5 } },
-            'The app hit an unexpected error. Your data is safe. Tap below to reload.'
+            'The app hit an unexpected error. Your data is safe. Export a backup before reloading if needed.'
           ),
           React.createElement('button', {
             onClick: () => window.location.reload(),
@@ -2867,7 +2947,34 @@ class ErrorBoundary extends React.Component {
               background: 'rgba(232,137,58,0.15)', border: '1px solid rgba(232,137,58,0.3)',
               color: '#E8893A', cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif"
             }
-          }, 'Tap to Reload')
+          }, 'Tap to Reload'),
+          React.createElement('button', {
+            onClick: async () => {
+              try {
+                const keys = ["elim3-checks", "elim3-assign", "elim3-comp", "elim3-notes", "elim3-photos", "elim3-roster", "elim3-timer", "elim3-history", "elim3-io-config", "elim3-schema-version"];
+                const backup = { exportedAt: new Date().toISOString(), error: String(this.state.error) };
+                for (const k of keys) {
+                  try {
+                    const r = await window.storage.get(k, true);
+                    backup[k] = r?.value ? JSON.parse(r.value) : null;
+                  } catch (e) { backup[k] = "READ_ERROR"; }
+                }
+                const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `elim-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch (e) { alert("Export failed: " + e.message); }
+            },
+            style: {
+              padding: '12px 28px', borderRadius: 10, fontSize: 15, fontWeight: 700,
+              background: 'rgba(92,184,122,0.15)', border: '1px solid rgba(92,184,122,0.3)',
+              color: '#5CB87A', cursor: 'pointer', fontFamily: "'DM Sans', system-ui, sans-serif",
+              marginTop: 12, display: 'block', width: '100%'
+            }
+          }, 'Export Backup')
         )
       );
     }
@@ -3112,6 +3219,13 @@ function ElimProductionApp() {
   }, [allItems, checks, totalItems, timerState, history, setHistory, setTimerState]);
 
   const loaded = c1 && c2 && c3 && c4 && c6 && c7 && c8 && c9;
+  const migrationsRun = useRef(false);
+  useEffect(() => {
+    if (loaded && !migrationsRun.current) {
+      migrationsRun.current = true;
+      runMigrations();
+    }
+  }, [loaded]);
 
   const titles = {
     dashboard: "ELIM Production", checklist: "Setup Checklist", "my-tasks": "My Tasks",
