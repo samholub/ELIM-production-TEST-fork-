@@ -2173,7 +2173,14 @@ function IOListView({ ioConfig, setIoConfig, currentUser }) {
               <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
               {ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}
               {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
-              {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+              {ch.inEarSnake && (
+                <div style={{
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  marginTop: 4, padding: "3px 10px", borderRadius: 20,
+                  background: S.accentGlow, border: `1px solid ${S.accentBorder}`,
+                  fontSize: 12, fontWeight: 700, color: S.accent, fontFamily: S.sans
+                }}>🎧 {ch.inEarSnake}</div>
+              )}
             </div>
             {ch.type && <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>}
           </div>
@@ -2346,7 +2353,14 @@ function IOListView({ ioConfig, setIoConfig, currentUser }) {
                     <>
                       <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
                       {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
-                      {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+                      {ch.inEarSnake && (
+                        <div style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          marginTop: 4, padding: "3px 10px", borderRadius: 20,
+                          background: S.accentGlow, border: `1px solid ${S.accentBorder}`,
+                          fontSize: 12, fontWeight: 700, color: S.accent, fontFamily: S.sans
+                        }}>🎧 {ch.inEarSnake}</div>
+                      )}
                     </>
                   )}
                 </div>
