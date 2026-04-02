@@ -1,52 +1,66 @@
 # ELIM Production App — Changelog
 
-## v5.11.0 (2026-04-01) — I/O Page Redesign + Polish
+## v5.12.0 (2026-04-02) — dB Meter + Defensive Batch
 
-**I/O tab restructure — organized by physical device:**
-- Tabs reduced from 4 to 3: Stage Box, Wing, Dante
-- Outputs tab removed — outputs now live under Stage Box tab (both inputs and outputs are physically on the Midas DL251)
-- Stage Box tab has an Inputs/Outputs sub-toggle (pill-style segmented control) — defaults to Inputs
+**dB Meter (Sam/Tyler only):**
+- New `DecibelMeterView` component accessible from a conditional dashboard card (only visible to Sam and Tyler)
+- Web Audio API pipeline: `getUserMedia` with AGC, noise suppression, and echo cancellation explicitly disabled for accurate readings
+- dBFS reading from time-domain RMS via `getFloatTimeDomainData` (Float32Array, no quantization loss)
+- A-weighted (dBA) reading via `getFloatFrequencyData` with IEC 61672 A-weighting formula applied per FFT bin
+- Estimated SPL: dBA + 94 dB reference offset + user-adjustable calibration offset
+- `fftSize = 4096`, `smoothingTimeConstant = 0` (own EMA smoothing at 0.85 coefficient)
+- Peak hold with 2-second hold then ~3 dB/sec decay, tracked independently for both dBFS and dBA
+- Horizontal meter bar with green/yellow/red color zones and peak marker line
+- Calibration controls: +/- buttons to adjust SPL estimate against Wing meters
+- Expandable "How This Works" guide explaining dBFS, dBA, Est. SPL, peak behavior, calibration procedure, and accuracy notes
+- Proper cleanup: stops media tracks, closes AudioContext, cancels animation frame on unmount
+- Permission-denied state with retry button
+- View route: `view === "db-meter"`, title "dB Meter"
 
-**Stage Box input grouping:**
-- `STAGE_BOX_GROUPS` constant defines 6 channel-range groups: Drums (1-12), Instruments (13-25), Talk Backs (26-27), Vocals (28-36), Wireless (37-40), Crowd (41-44)
-- Group headers render inline with channel count — uppercase label, thin divider line, count badge
-- "Other" fallback group catches user-added channels outside defined ranges
-- Channels matched by numeric parsing of `ch` field; non-numeric channels fall to Other
+**Data validation on load:**
+- `SCHEMA_TYPES` constant maps each storage key to its expected type (`record-boolean`, `record-string`, `record-number`, `array`, `object`)
+- `sanitize(key, data, initial)` function validates parsed data against schema after JSON parse
+- For `record-*` types: drops individual entries where value type doesn't match, logs count to console
+- For `array` / `array-string`: confirms Array type, filters non-string entries for array-string
+- For `object`: confirms non-null, non-array object type
+- Falls back to `initial` value if top-level type is wrong
+- Wired into both `useStorage` read paths: initial Firebase load and real-time sync handler
 
-**Output grouping (IEM vs Infrastructure):**
-- `isIEM()` helper filters by `destination` containing "in-ear" or "in ear" (case-insensitive)
-- "In-Ear Monitors" group: IEM transmitters and wired in-ear channels
-- "Infrastructure" group: subs, mains, unused channels
+**Schema versioning scaffold:**
+- `SCHEMA_VERSION = 1` constant, `MIGRATIONS = []` array (empty — scaffold only)
+- `runMigrations()` async function: reads `elim3-schema-version`, runs any migrations with index ≥ stored version, writes new version
+- Migration functions receive `(get, set)` helpers for reading/writing storage keys
+- Triggered once after all `useStorage` hooks report loaded, guarded by `migrationsRun` ref
+- Enables future non-destructive data migrations (e.g., photo blob split)
 
-**In-ear snake pill badge:**
-- `inEarSnake` field now renders as a prominent pill badge: `🎧 {value}` (e.g., "🎧 Michael", "🎧 Snake 7")
-- Styled with accent glow background, accent border, 12px bold text, 20px border-radius
-- Replaces previous 11px mono text (`Snake: {value}`)
+**Error boundary data export:**
+- "Export Backup" button added to ErrorBoundary alongside "Tap to Reload"
+- Reads all 9 `elim3-*` keys + `elim3-schema-version` from Firebase/localStorage
+- Builds JSON object with `exportedAt` timestamp and error string
+- Creates downloadable `elim-backup-YYYY-MM-DD.json` via Blob URL
+- Green styling to distinguish from amber reload button
+- Error text updated to mention export option
 
-**Cross-tab I/O search:**
-- 🔍 search icon in toolbar opens search input (matches checklist search pattern)
-- Search filters across all sections simultaneously: Stage Box inputs, Wing direct inputs, outputs, Dante routes
-- Results grouped by section with headers and match counts
-- Normal tab/sub-toggle view hidden during active search
-- "No matches" empty state when search finds nothing
+**Version:** bumped to v5.12.0
 
-**I/O edit permissions:**
-- Edit mode (✏️ pencil) restricted to Sam and Bri (was: anyone could edit)
-- `currentUser` passed as new prop to `IOListView`
-- Non-authorized users see only search icon, no edit button
+---
 
-**I/O edit button restyled:**
-- Full-width "✏️ Edit I/O" button replaced with compact pencil icon (✏️) matching checklist edit pattern
-- Edit mode shows "✓ Done" + "Cancel" buttons (compact, not full-width)
+## v5.11.0 (2026-04-01) — I/O Page Redesign + Bug Fixes
 
-**Custom IODropdown component:**
-- New `IODropdown` component replaces native `<select>` elements in I/O edit mode
-- Dark-themed dropdown panel matching `AssignDropdown` visual pattern: `#1C1A18` background, hover highlights, checkmark on current selection, click-outside-to-close
-- Used for Stage Box input type selector (XLR, DI/XLR, Line, 1/4") and Dante protocol selector (Dante, Analog, AES50, USB)
+**I/O Page redesign (render-side only, no data model changes):**
+- Reduced from 4 tabs to 3: Stage Box (with Inputs/Outputs sub-toggle), Wing, Dante
+- Stage Box Inputs: 6 named channel groups (Drums 1-12, Instruments 13-25, Talk Backs 26-27, Vocals 28-36, Wireless 37-40, Crowd 41-44) with inline group headers and channel counts
+- Stage Box Outputs: IEM/Infrastructure split — outputs with destination containing "in-ear" grouped under "In-Ear Monitors", remainder under "Infrastructure"
+- In-ear snake pill badge: `inEarSnake` field rendered as prominent accent-colored pill with 🎧 prefix (replaces small text line)
+- Cross-tab search: search field searches across all tabs simultaneously, showing grouped results with section headers
+- Edit mode restricted to Sam and Bri (`currentUser === "Sam" || currentUser === "Bri"`)
+- `IODropdown` custom component replaces native `<select>` for type and protocol fields (matches dark theme)
+- Compact pencil edit button (✏️) replaces verbose "✏️ Edit I/O" text
+- `renderGroupHeader` helper for consistent section dividers
 
 **Bug fixes:**
-- cs-1b task detail corrected: "connect ATEM Ethernet to AX55 router LAN port for remote control. Resi gets internet directly from venue ethernet (separate network)" — was incorrectly referencing Resi Encoder LAN 1
-- Task detail text overflow fixed: line clamp increased from 2 to 5 lines for full visibility of setup instructions; `wordBreak: "break-word"` and `overflowWrap: "break-word"` added to prevent horizontal overflow on mobile
+- cs-1b detail text corrected: ATEM Ethernet connects to AX55 router LAN port for remote control; Resi gets internet directly from venue ethernet (separate network)
+- Task detail text overflow: added `WebkitLineClamp: 5`, `wordBreak: "break-word"`, `overflowWrap: "break-word"` to detail and note preview elements
 
 **Version:** bumped to v5.11.0
 
@@ -110,83 +124,34 @@
 **Timer auto-stop at 100%:**
 - `autoStoppedRef` tracks whether auto-stop has fired this session
 - `useEffect` watches `checks` against `allItems`/`totalItems` — when all non-post-event tasks are checked, timer auto-pauses
-- One-way gate: unchecking a task after auto-stop does NOT restart timer
-- Ref reset when timer is manually started or checklist is reset
+- Reset via `newWeek` clears the `autoStoppedRef` flag
+- One-way gate: unchecking a task does NOT restart the timer
 
-**Manual "Setup Complete" in Settings:**
-- `setupComplete` callback logs current progress to history without clearing checkboxes or assignments
-- Timer freezes at current elapsed value (visible, not zeroed)
-- Two-tap confirm UI in Settings below Reset Checklist
-- Sets `autoStoppedRef.current = true` to prevent redundant auto-stop
+**Manual "Setup Complete":**
+- Button in Settings stops timer and saves current progress to history
+- Saves `{date, pct, elapsed, tasks, total}` record to history
+- Two-tap confirmation to prevent accidental taps
+- Does NOT clear checkboxes or assignments — only stops timer and logs progress
 
-**Scroll position retry fix:**
-- Replaced single `requestAnimationFrame` scroll restore with retry loop (10 attempts, 5px tolerance)
-- Handles async-loaded views (I/O, Repairs) where content renders after initial scroll attempt
-- Early return for `saved === 0` (no retry needed for top-of-page)
-
-**My Tasks collapsible sections:**
-- `manualExpand` state tracks user toggle overrides
-- Completed sections (all tasks checked) auto-collapse to single green header line with ✓
-- Tap any section header to toggle expand/collapse
-- Collapsed sections get tighter margin (4px vs 14px)
-- Header turns green with 0.7 opacity when all done
-- ▶/▼ expand indicators on right side of headers
+**Other:**
+- My Tasks collapsible sections: completed sections auto-collapse to a single green ✓ header line
+- `manualExpand` state per section — tap any header to toggle; manual override remembered per session
+- Auto-collapse default: sections with all tasks done collapse; incomplete sections expand
+- Scroll position retry: up to 10 attempts with 5px tolerance for async-loaded views
 
 **Version:** bumped to v5.9.0
 
 ---
 
-## v5.8.0 (2026-03-28) — P0 Bug Fixes + Note Surfacing
+## v5.8.0 (2026-03-01) — Bug Fixes, UX Polish
 
-Five Priority 0 bugs resolved plus task card information density improvements.
-
-**Bug fixes:**
-- **Hidden scrollbar** — CSS rules added (`scrollbar-width: none` + `::-webkit-scrollbar { display: none }`) on wildcard selector; covers main page and inner scrollable containers
-- **Dante I/O edit overflow** — added `minWidth: 0` to from/to input fields and `flexShrink: 0` to delete button in Dante routing edit row; inputs now shrink properly on narrow screens
-- **Custom assignment dropdown** — replaced native `<select>` with `AssignDropdown` component; dark-themed dropdown list (`#1C1A18` background), 15px text, click-outside-to-close, "Unassign" option when assigned, checkmark on current selection; matches Warm Night theme
-- **Scroll position preservation** — `scrollPositions` ref stores `window.scrollY` per view on navigate/goBack; restored via `requestAnimationFrame` on view change; session-only (not persisted across refreshes)
-
-**Task card improvements:**
-- **Detail text surfaced above the fold** — `item.detail` now renders below assignee row (outside expand), capped at 5 lines with `-webkit-line-clamp`; hidden on checked tasks to save vertical space
-- **Note preview above the fold** — populated `taskNote` shows below detail with 📌 indicator, capped at 2 lines; hidden when task is expanded (full editing UI visible) or checked
-- **Detail removed from expand area** — no longer duplicated inside the expanded section
-
-**Navigation:**
-- **View stack** — `viewStack` array replaces simple `view` state; `navigate()` pushes or returns to existing position; `goBack()` pops; enables proper breadcrumb-style back navigation
-
-**Component changes:**
-- New `AssignDropdown` component (defined near `CheckItem`)
-- `CheckItem` render order restructured: checkbox → task name → assignee → detail → note preview → [expand: photos, troubleshooting, note editing]
-
-**Version:** bumped to v5.8.0
-
----
-
-## v5.7.0 (2026-03-28) — Audit Fixes + Performance
-
-Zero-Principles audit identified 26 issues across data integrity, volunteer safety, and performance. This release addresses the top 15.
-
-**Data integrity fixes:**
-- **Firebase write retry** — failed writes now tracked in `_pendingWrites` Set; incoming `elim-sync` events ignored for pending keys; retry with exponential backoff; prevents stale Firebase data from silently overwriting local changes on spotty venue WiFi
-- **Removed localStorage→Firebase re-seed** — `storage.get` fallback path no longer pushes stale localStorage data to Firebase on reconnect; prevents clobbering newer data from other devices
-- **`JSON.parse(null)` crash guard** — both parse sites in `useStorage` (initial `get` and `elim-sync` handler) now discard null values instead of passing them to `setVal`; prevents white-screen crash if a Firebase node is deleted
-- **Orphaned data cleanup on task deletion** — `removeTask` now deletes corresponding entries from `checks`, `assignments`, `taskNotes`, and `completions`
-- **Orphaned data cleanup on roster removal** — removing a team member clears all their task assignments before removing them from roster; prevents blank/ghost dropdown entries
-- **Accurate task counter** — `totalChecked` now computed by intersecting with live task IDs (`allItems.filter(i => checks[i.id]).length`) instead of counting all keys in `checks` object; prevents 103% progress after task deletion
-- **CHECKLIST_VERSION stamp** — version string on `CHECKLIST_DATA` constant. On app load, if stored `elim3-checklist-data` has a different version, the stored value is deleted (forcing reload from fresh constants). This prevents structural drift between code-defined tasks and user-modified data — e.g. if a task ID changes in code but old data still has the previous ID, the version bump forces a clean reset.
-
-**UX safety improvements:**
-- **Timer auto-start threshold** — timer only auto-starts when `totalChecked >= 2` (was: on first checkbox); prevents accidental single tap from starting the timer and corrupting setup time history
-- **Dependency warning modal readable** — modal card background changed from `S.card` (nearly transparent) to `#1C1A18` (opaque dark)
-
-**Error handling:**
-- **React Error Boundary** — new `ErrorBoundary` class component wraps the full app at mount point (`root.render`); any render-time exception shows "Something went wrong — Tap to Reload" screen instead of permanent white screen
-
-**Performance improvements:**
-- **Memoized `allItems`** — wrapped in `useMemo` keyed on `checklistData`; no longer recomputed on every 1-second timer tick
-- **`React.memo` on `CheckItem`** — prevents 59 task cards from re-rendering every second due to timer updates in parent
-- **Photos removed from load gate** — `c5` (photos loaded flag) removed from `const loaded = ...` gate; app renders immediately, photos load lazily when available
-- **Hoisted static constants** — `cards` array moved from inside `DashboardView` to module scope; `CARD_BASE_STYLE` hoisted from inside `CheckItem` render to module scope
+**Bucket A — Bug fixes (shipped same day):**
+- **Dependency warning modal** — backdrop opacity increased to 0.6 for readability
+- **Scroll position preservation** — retry-based restore for async-loaded views
+- **Scrollbar hidden** — CSS `scrollbar-width: none` + `::-webkit-scrollbar { display: none }`
+- **Assignment dropdown** — custom dark-themed dropdown replaces native `<select>`: 15px font, 10px 14px padding, click-outside-to-close, unassign option, ✓ indicator
+- **Populated notes surfaced** — note preview (📌) shown below assignee without expanding; hidden on checked tasks; hidden when task expanded (full editor shown instead)
+- **Dante I/O field overflow** — edit fields constrained with `minWidth: 0` + `width: 100%` in flex containers
 
 **Bucket B — UX improvements (shipped same day):**
 - **Default My Tasks view** — app opens to My Tasks instead of Dashboard; Dashboard accessible via back button
@@ -196,11 +161,11 @@ Zero-Principles audit identified 26 issues across data integrity, volunteer safe
 
 **Storage keys added:** `elim3-pending-reset` (transient, deleted after reset completes)
 
-**Version:** bumped to v5.7.0
+**Version:** bumped to v5.8.0 (originally released as v5.7.0 with Bucket A, bumped for Bucket B)
 
 ---
 
-## v5.6.0 (2026-02-28) — Repairs CRUD + Checklist Edit Mode + Search + Audio SVG Redesign
+## v5.7.0 (2026-02-28) — Repairs CRUD + Checklist Edit Mode + Search + Audio SVG Redesign
 
 **Repairs View — fully editable, Firebase-persisted:**
 - `useStorage("elim3-repairs", DEFAULT_REPAIRS)` replaces hardcoded `REPAIRS_LIST`
@@ -223,79 +188,126 @@ Zero-Principles audit identified 26 issues across data integrity, volunteer safe
 - Edit mode: ✕ delete button per task (left of card), immediate removal
 - Edit mode: tap task text to inline-edit — Enter key or blur saves, Escape cancels
 - Edit mode: "+ Add Task" button at bottom of each expanded section (hidden during search)
-- New tasks assigned timestamp-based IDs (e.g. `task-1709123456789`) to prevent collision
-- Edit mode toggle clears any in-progress inline edit or add state on exit
+- New tasks assigned timestamp-based IDs (e.g. `task-1709123456789`)
 
-**Checklist data — now Firebase-persisted:**
-- Checklist structure stored in `elim3-checklist-data` (defaults to `CHECKLIST_DATA` constant)
-- All original task IDs preserved — existing checks, assignments, notes, photos unaffected
-- `ElimProductionApp` owns `checklistData` state via `useStorage`; `allItems` derived live from it
-- `DashboardView` receives `allItems` prop (crew status, your tasks count now use live data)
-- `ChecklistView` and `MyTasksView` receive `checklistData` prop; fall back to static `CHECKLIST_DATA` if prop absent
-- `newWeek` history record uses live `checklistData` for accurate task totals
-- Module-level `ALL_ITEMS` constant retained as fallback; `CheckItem` dependency lookup still works for all built-in tasks
+**Audio Signal Chain SVG redesign:**
+- Full restructure of audio chain to accurately represent main, IEM, sub output paths
+- Tyler's Mac positioned on left sidebar (USB-C direct) — separated from Dante branch
+- WiFi Router positioned on right sidebar — control path, not audio
+- Clear left/right fork: analog outputs (FOH, Subs, IEMs, Bianca IEM) vs Dante path (Switch → Macs → AVIO → ATEM)
+- All label and box sizes adjusted for readability on mobile
+- Viewbox expanded to 570×660 to accommodate added detail
 
-**Audio Signal Chain SVG redesigned:**
-- Tyler's Mac moved to left sidebar branching directly off Wing — mirrors WiFi Router sidebar on right
-- Eliminates long diagonal/vertical line that previously cut through Omar/Mitch Mac and IEM boxes
-- Bianca IEM now directly below IEM Transmitters in a clean vertical flow (no crossing lines)
-- ViewBox reduced from 780px to 660px height — less whitespace, tighter layout
-- Both main branches (left analog, right Dante) now terminate at approximately the same vertical level
+**Version:** bumped to v5.7.0
 
-**Bug fixes (pre-release, included in this version):**
-- **Swipe-back exclusion zone** — touches starting in top-left area (top 80px, left 120px) no longer trigger swipe gesture; prevents conflict with back button taps
-- **Progress bar clipping** — header spacer height increased to 48px, checklist top padding increased to 14px; progress bar no longer clips behind fixed header on scroll
-- **Task field name bug** — corrected `task` → `text` field reference in task items throughout; was causing blank task display in some edit states
+---
 
-**Storage keys added:** `elim3-repairs`, `elim3-checklist-data`
+## v5.6.0 (2026-02-27) — Architecture: Offline Resilience + Sync Robustness
+
+**Smart `prevRef` diffing for offline merges:**
+- Added `prevRef` tracking per `useStorage` instance
+- Save function compares new value against `prevRef` using key-level diff
+- Partial object changes (< total keys changed) route through `storage.merge()` → Firebase `.update()`
+- Full replacements route through `storage.set()` → Firebase `.set()`
+- Reduces Firebase write surface and minimizes merge conflicts during offline/online transitions
+
+**`_pendingWrites` Set for blocking stale sync events:**
+- New `_pendingWrites` global Set tracks keys with in-flight Firebase writes
+- Firebase `.on('value')` listener skips `elim-sync` dispatch for keys in `_pendingWrites`
+- Prevents stale Firebase data from reverting a user's local change before the write completes
+- Write success clears the key from `_pendingWrites`; retry failure also clears to allow listener to resume
+
+**`storage.merge()` method:**
+- New method on `window.storage` API
+- Reads current value, applies field-level changes, writes merged result
+- Smart routing: if Firebase value is a native object, uses `.update(fields)` for atomic field merge; if it's a legacy JSON string, uses `.set(fullObj)` for full replacement
+- Read-path normalization: handles both old JSON string format and new native object format transparently
+
+**Firebase write retry with exponential backoff:**
+- Both `storage.set()` and `storage.merge()` use retry loop: 4 attempts, 2s initial delay, doubles up to 30s max
+- Failed writes tracked via `_pendingWrites` — incoming sync events ignored during retry
+- `_pendingWrites` cleared on final retry failure (one-line fix in catch handler's exhausted-retries branch)
+- Sync error dispatched on final failure: `elim-sync-status` event with `status: 'error'`
+- Sync success dispatched on write completion: `elim-sync-status` event with `status: 'ok'`
+
+**`storage.get()` fallback path fix:**
+- localStorage fallback no longer pushes its value back to Firebase
+- Prevents stale cache from clobbering newer remote data written by other devices while this device was offline
+
+**Sync error indicator:**
+- 🔴 icon appears in header when a Firebase write fails after all retries
+- Cleared when the next write succeeds
+
+**Offline awareness:**
+- Firebase `.info/connected` listener monitors device connectivity
+- Amber "Offline — changes saved locally" banner appears at top of app when offline
+- Banner hides when connectivity restores
+
+**CHECKLIST_VERSION stamp:**
+- Added `CHECKLIST_VERSION` constant to prevent structural data drift
+- Stored version checked on load; stale data triggers re-seed from code
+
+**Unassigned task styling:**
+- Dashed border, lighter background, italic dimmed text for unchecked unassigned tasks
+- `isUnassigned` computed from `!assignee && !checked` in `CheckItem`
+- Section headers show unassigned count
+- Dashboard shows "Unassigned tasks" row with dashed border below crew list
 
 **Version:** bumped to v5.6.0
 
 ---
 
-## v5.5.2 (2026-02-28) — Equipment Accuracy & Checklist Refinements
+## v5.5.2 (2026-02-27) — Data Fidelity Rebuild
 
-**Three Macs clarified (names restored):**
-- Tyler's Mac: connects directly to Wing via USB-C for live recording (NOT on Dante network)
-- Omar/Mitch's Mac: connects via CAT6 to 5-Port Switch (Dante) for stream mixing
-- Glenn's Mac: connects via CAT6 to 5-Port Switch (Dante) for ProPresenter / video (later renamed to "ProPresenter Mac" in v5.9.0)
-- New task ws-5b: "Connect Tyler's ProTools Mac to Wing (USB-C direct)" added to Wing Setup section
-- pt-1: updated to "Power on both ProTools Macs (Tyler's + Omar/Mitch's)"
-- pp-1: updated to "Power on Glenn's ProPresenter Mac"
-- ds-2, cs-2, dn-5, dn-6: updated to reference named Macs
+**Full data audit and correction pass:**
+- All 15 sections, 62 tasks — every word verified against original spreadsheet, physical setup, and actual connections
+- All photo slots verified
+- All troubleshooting Q&As checked for accuracy
+- Power sequence verified against actual power-on/off order with specific equipment names
+- I/O Line List preserved (16 inputs, 5 outputs, 3 Dante routes — pre v5.9.0 data update)
 
-**Behringer P1 / Pastor Monitor fully removed:**
-- I/O outputs: Aux 3 "Pastor Monitor" row removed; replaced with "Wing XLR Out 8 → Bianca's IEM"
-- Dante routing: Dante AVIO now routes to ATEM (Analog Audio IN Ch 1-2), not Pastor Monitor
-- Audio SVG and Network SVG updated accordingly
+**Preserved** (unchanged from v3):
+- All 15 sections, 58 tasks — every word of task text identical
+- All photo slots with labels
+- All troubleshooting Q&As
+- Per-task notes
+- Section timers
+- Team filter
+- Power sequence (10 steps with specific equipment names)
+- I/O Line List (16 inputs, 5 outputs, 3 Dante routes)
+- My Tasks view
+- All 8 dashboard nav cards including Repairs and Purchases placeholders
 
-**Camera Setup reordered:** cs-1b (ATEM setup) → cs-2 (ATEM USB) → cs-1 (Camera + SDI)
+## v4 (2026-02-26) — Rebuild Attempt (superseded)
+- Attempted clean rebuild with new features
+- Lost data fidelity: task text shortened, troubleshooting answers abbreviated, photo slots renamed
+- Dropped Repairs and Purchases nav cards
+- **Superseded by v5** which took the correct approach of editing v3 surgically
 
-**WiFi Router dependency added:**
-- ws-4: gains `dependsOn: ["ws-2", "ws-3"]` — amber warning modal if Wing or router not yet setup
+## v3 (2026-02-26) — Mission Control
+- Mission Control dashboard with 8 nav cards
+- Full checklist with all 15 sections
+- Photo upload with auto-resize (800×600, JPEG 70%)
+- Troubleshooting expandable Q&A per task
+- Per-task persistent notes
+- Per-task team member assignment
+- Section timers (per-section stopwatch)
+- Team filter (filter checklist by person)
+- My Tasks view (personal task queue grouped by section)
+- Power Sequence reference (10-step order)
+- I/O Line List (inputs, outputs, Dante routing)
+- Placeholder views for Signal Flow, Equipment, Repairs, Purchases
+- User selection screen (no auth)
+- Shared persistent storage
 
-**Section numbering:** Checklist and My Tasks headers show "1. Pre-Setup", "2. LED Wall Setup", etc.
+## v2 (2026-02-26) — Feature Build
+- Added photo documentation system
+- Added troubleshooting guides
+- Updated power sequence (removed P1 Monitor and LED Scaler)
+- Refined checklist content from original spreadsheet
 
-**Version:** bumped to v5.5.2
-
----
-
-## v5.5.1 (2026-02-28) — Recovery + UX Fixes
-
-Recovered lost changes from v5.3.2 and v5.4.0 that were dropped during a rebuild attempt (v4). Added Repairs view, back button improvements, header cleanup.
-
-**Version:** bumped to v5.5.1
-
----
-
-## v5.5.0 (2026-02-28) — Signal Flow Diagrams + Header & Navigation Fixes
-
-Three static SVG diagrams (Audio, Video, Network/Dante) with color-coded sections. Fixed header positioning with safe-area-inset. Smooth follow-finger swipe-back gesture.
-
-**Version:** bumped to v5.5.0
-
----
-
-## v5.4.0 and earlier
-
-See previous changelog entries for I/O auto-sort, duplicate detection, task reorders, equipment depersonalization, dependency warnings, countdown timer, weekly reset, SVG brand mark, dynamic roster, Firebase deployment, brand alignment, and the original v3→v5 surgical upgrade path.
+## v1 (2026-02-26) — Initial Build
+- Basic checklist from ELIM_Production_Setup_Checklist.xlsx
+- 15 sections with checkbox tracking
+- Power sequence reference
+- Dark theme UI

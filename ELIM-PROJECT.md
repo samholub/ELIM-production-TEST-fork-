@@ -10,7 +10,7 @@ The app solves three problems that get worse as the team grows: (1) verification
 
 ---
 
-## Current Status: v5.11.0
+## Current Status: v5.12.0
 
 **Live URL:** https://elim-production.web.app
 **Test URL:** Replit preview (connected to production Firebase)
@@ -21,7 +21,7 @@ The app solves three problems that get worse as the team grows: (1) verification
 - **Photo documentation** — camera capture or upload per task, auto-resized, persistent
 - **Troubleshooting guides** — expandable Q&A per task for common issues
 - **Per-task notes** — persistent, shared across team; preview shown above the fold (hidden on checked tasks)
-- **Task detail surfacing** — static reference text shown below assignee, up to 5 lines with word-break (hidden on checked tasks)
+- **Task detail surfacing** — static reference text shown below assignee without expanding (hidden on checked tasks; line clamp 5 with word-break)
 - **Custom assignment dropdown** — dark-themed dropdown replacing native select; click-outside-to-close, unassign option
 - **Countdown timer** — configurable (30/45/60/90 presets or custom) with green→yellow→red transition, auto-pause at zero, syncs across devices
 - **Timer auto-stop** — timer automatically pauses when all non-post-event tasks reach 100%; one-way gate per session (unchecking doesn't restart)
@@ -38,12 +38,14 @@ The app solves three problems that get worse as the team grows: (1) verification
 - **My Tasks collapsible sections** — completed sections auto-collapse to a single green ✓ header line; tap any header to toggle; manual override remembered per session
 - **Follow-finger swipe-back gesture** — real-time content tracking, 35% threshold, header zone exclusion
 - **Power sequence** — 10-step equipment power order with teardown reminder; badges on task cards
-- **Persistent I/O Line List** — 3 tabs (Stage Box, Wing, Dante) organized by physical device; Stage Box has Inputs/Outputs sub-toggle; inputs grouped into 6 channel-range sections (Drums, Instruments, Talk Backs, Vocals, Wireless, Crowd) with "Other" fallback; outputs split into IEM vs Infrastructure groups; in-ear snake pill badge (🎧); cross-tab search across all sections; draft-based editing with confirm-on-save modal; edit restricted to Sam and Bri; custom IODropdown components replacing native selects; persisted via `useStorage` and synced to all devices
-- **Repairs tracker** — Firebase-persisted with full CRUD, search, priority levels
+- **Persistent I/O Line List** — 3-tab layout (Stage Box with Inputs/Outputs sub-toggle, Wing, Dante); 6 named channel groups for inputs; IEM/Infrastructure output split; 🎧 in-ear snake pill badges; cross-tab search; edit restricted to Sam and Bri; custom IODropdown components; draft-based editing with confirm-on-save modal; persisted via `useStorage` and synced to all devices
 - **Checklist task editing** — search toggle (🔍 icon), edit mode (Sam only) with add/remove/edit tasks inline
 - **View stack navigation** — proper breadcrumb-style back navigation with scroll position preservation (retry-based restore for async-loaded views)
 - **Default My Tasks view** — app opens to My Tasks; dashboard accessible via back navigation
-- **Error boundary** — render crashes show "Tap to Reload" instead of permanent white screen
+- **dB Meter** — Web Audio API decibel meter restricted to Sam/Tyler; dBFS + A-weighted (IEC 61672) + estimated SPL readings; peak hold with decay; calibration offset; expandable guide; AGC/noise suppression disabled
+- **Data validation** — `sanitize()` function in `useStorage` read path type-checks all storage keys against `SCHEMA_TYPES`; malformed fields dropped with console warnings
+- **Schema versioning** — `SCHEMA_VERSION` constant with `MIGRATIONS` array scaffold; `runMigrations()` runs once after load; enables future non-destructive data migrations
+- **Error boundary with data export** — render crashes show "Tap to Reload" + "Export Backup" button that dumps all `elim3-*` keys as downloadable JSON
 - **Dependency warnings** — prerequisite tasks must be complete (amber modal, user can always proceed)
 - **Dynamic roster** — add/remove/reorder team members in Settings; blast-radius warnings on removal (shows affected assignments)
 - **Remember-me** — device remembers last selected user
@@ -81,20 +83,24 @@ The app uses a three-tier storage system with Firebase Realtime Database as the 
 
 **Write path:** React state update → localStorage cache (immediate) → Firebase write (async with retry). If the Firebase write fails, the key is added to `_pendingWrites` and retried with exponential backoff (4 retries, 2s initial delay, max 30s). If all retries fail, the pending flag is removed so the listener can resume, and a sync error indicator appears.
 
-**Read path (on mount):** Try Firebase first → fall back to localStorage cache → throw if neither exists. The localStorage fallback does **not** push its value back to Firebase — this prevents stale cache from clobbering newer remote data written by other devices while this device was offline.
+**Read path (on mount):** Try Firebase first → fall back to localStorage cache → throw if neither exists. Parsed data is validated by `sanitize(key, data, initial)` against `SCHEMA_TYPES` before being applied to state. The localStorage fallback does **not** push its value back to Firebase — this prevents stale cache from clobbering newer remote data written by other devices while this device was offline.
 
-**Sync path (real-time):** Firebase `.on('value')` listeners fire `elim-sync` CustomEvents consumed by the `useStorage` hook. Before applying an incoming sync event, the listener checks `_pendingWrites` — if the key has a local write in flight, the incoming event is ignored to prevent stale Firebase data from reverting the user's local change.
+**Sync path (real-time):** Firebase `.on('value')` listeners fire `elim-sync` CustomEvents consumed by the `useStorage` hook. Before applying an incoming sync event, the listener checks `_pendingWrites` — if the key has a local write in flight, the incoming event is ignored to prevent stale Firebase data from reverting the user's local change. Incoming data is also run through `sanitize()`.
 
 **Offline awareness:** A Firebase `.info/connected` listener monitors connectivity. When the device goes offline, a warning banner appears at the top of the app. All writes continue to localStorage immediately and will reach Firebase when connectivity restores.
 
 **Smart diffing:** The `useStorage` save function compares the new value against a `prevRef` to determine whether to use `storage.merge` (field-level atomic update for partial object changes) or `storage.set` (full replacement). This minimizes Firebase writes and reduces conflict surface.
 
+**Data validation:** The `sanitize()` function checks parsed data against `SCHEMA_TYPES` on every read (initial load and sync events). For `record-*` schemas, individual entries with wrong value types are dropped. For `array` and `object` schemas, wrong top-level types fall back to the initial value. Dropped fields are logged to console for debugging.
+
+**Schema versioning:** `SCHEMA_VERSION` (integer, currently 1) and `MIGRATIONS` (array of async functions) enable non-destructive data format migrations. `runMigrations()` runs once after all `useStorage` hooks report loaded. Each migration receives `(get, set)` helpers. The current version is stored in `elim3-schema-version`.
+
 ### Draft-Based Editing Pattern
 
 Used by IOListView for the I/O Line List:
-1. ✏️ pencil button (Sam and Bri only) clones live state into a local draft (`useState`)
+1. "Edit" (✏️) clones live state into a local draft (`useState`)
 2. All user modifications target the draft, not live state
-3. "✓ Done" opens a confirm modal: "Save I/O changes? This syncs to all devices."
+3. "Done" (✓) opens a confirm modal: "Save I/O changes? This syncs to all devices."
 4. "Save" writes draft → `useStorage` → localStorage + Firebase → syncs to all devices
 5. "Discard" / "Cancel" drops the draft, reverts UI to live state
 
@@ -102,7 +108,7 @@ This pattern prevents half-finished edits from syncing to other devices mid-edit
 
 ### Firebase / Code Sync Strategy
 
-The hardcoded constants in the code (`CHECKLIST_DATA`, `DEFAULT_IO_LINE_LIST`, `DEFAULT_REPAIRS`) are the **canonical baseline**. Firebase is the live store.
+The hardcoded constants in the code (`CHECKLIST_DATA`, `DEFAULT_IO_LINE_LIST`) are the **canonical baseline**. Firebase is the live store.
 
 **How it works:**
 - First app load (or after reset) → seeds Firebase from code constant
@@ -123,16 +129,16 @@ The hardcoded constants in the code (`CHECKLIST_DATA`, `DEFAULT_IO_LINE_LIST`, `
 ### Storage Keys
 | Key | Content | Persistence |
 |-----|---------|-------------|
-| `elim3-checks` | Checkbox states | Cleared on reset |
-| `elim3-assign` | Task assignments | Preserved |
-| `elim3-comp` | Completion metadata | Cleared on reset |
-| `elim3-notes` | Per-task notes | Preserved |
-| `elim3-photos` | Photo data (base64) | Preserved |
-| `elim3-roster` | Team roster | Preserved |
-| `elim3-timer` | Timer state | Cleared on reset |
-| `elim3-history` | Setup history (last 52 weeks) | Preserved |
-| `elim3-io-config` | I/O line list (persistent, draft-based editing) | Preserved |
-| `elim3-repairs` | Repairs list | Preserved |
+| `elim3-checks` | Checkbox states (`Record<string, boolean>`) | Cleared on reset |
+| `elim3-assign` | Task assignments (`Record<string, string>`) | Preserved |
+| `elim3-comp` | Completion metadata (`Record<string, number>`) | Cleared on reset |
+| `elim3-notes` | Per-task notes (`Record<string, string>`) | Preserved |
+| `elim3-photos` | Photo data — base64 (`Record<string, string>`) | Preserved |
+| `elim3-roster` | Team roster (`Array`) | Preserved |
+| `elim3-timer` | Timer state (`Object: {startedAt, accumulated, targetMinutes}`) | Cleared on reset |
+| `elim3-history` | Setup history — last 52 weeks (`Array`) | Preserved |
+| `elim3-io-config` | I/O line list — persistent, draft-based editing (`Object`) | Preserved |
+| `elim3-schema-version` | Schema version integer for migrations | Preserved |
 | `elim3-checklist-data` | Checklist structure — deleted on load, re-seeded from code | Ephemeral |
 | `elim3-pending-reset` | Transient flag for atomic reset (deleted after reset completes) | Transient |
 
@@ -144,7 +150,7 @@ The hardcoded constants in the code (`CHECKLIST_DATA`, `DEFAULT_IO_LINE_LIST`, `
 | Timer | Photos |
 | | Roster |
 | | I/O config |
-| | Repairs |
+| | Schema version |
 
 ---
 
@@ -175,11 +181,11 @@ workspace/                        ← Replit workspace (primary dev environment)
 **Hosted on:** Firebase Hosting (free Spark plan)
 
 **Development environment:** Replit (sole dev environment — live preview, terminal, Firebase CLI all in one place)
-**Source backup:** GitHub (push once per version, not per edit — `git add . && git commit -m "v5.x.0" && git push`)
+**Source backup:** GitHub (push once per version, not per edit)
 
 **To redeploy after changes:**
 1. Edit `index.html` in Replit
-2. Run `firebase deploy --only hosting` in Replit terminal
+2. Run `./deploy.sh` in Replit terminal (force-pushes to GitHub + deploys to Firebase)
 3. Live in ~10 seconds at the same URL
 
 Firebase CLI is authenticated in Replit under `sammholub@gmail.com` with project `elim-production` linked.
@@ -199,6 +205,7 @@ Firebase CLI is authenticated in Replit under `sammholub@gmail.com` with project
 - **Your Tasks:** Card linking to My Tasks with remaining count
 - **Crew Status:** Per-person progress rows, you sorted first, "Unassigned tasks" row at bottom
 - **Nav Cards:** 1×3 grid — I/O Line List, Power Sequence, Signal Flow
+- **dB Meter Card:** Full-width below nav grid, visible only to Sam and Tyler
 
 ## Settings Layout
 - **Reset Checklist** (top) — two-tap confirmation
@@ -246,7 +253,7 @@ Firebase CLI is authenticated in Replit under `sammholub@gmail.com` with project
 
 ### Audio / Stage
 
-- **Stage Box**: Midas DL251 — connects to Wing AES50 Supermac port A; 44 input channels + output jacks for IEM packs and speakers (routed from Wing via AES50)
+- **Stage Box**: Midas DL251 — connects to Wing AES50 Supermac port A; 44 input channels
 - **Soundboard**: Behringer Wing (with Dante Expansion card) — Wing ethernet left port to WiFi Router; Dante Expansion to port 5 on switch
 - **Network Switch**: 5-Port Switch (Dante network) — port 5 = Wing Dante Expansion
 - **WiFi Router**: TP-Link AX55 — ATEM/Mac control network + iPad wireless control. Router on 192.168.0.x subnet.
@@ -316,7 +323,9 @@ Managed dynamically via Settings. Default roster: Glenn, Sunny, Omar, Mitch, Mic
 - **Offline protection:** `_pendingWrites` Set tracks keys with in-flight Firebase writes. Failed writes retry with exponential backoff (4 retries, 2s→30s). `storage.get` fallback path does not push localStorage back to Firebase, preventing stale cache from clobbering newer remote data on reconnect.
 - **Offline awareness:** Firebase `.info/connected` listener monitors connectivity status. A warning banner appears at the top of the app when the device is offline.
 - **Resilience:** Firebase init in try/catch, all localStorage in `_ls` safe wrapper — app degrades gracefully: Firebase → localStorage → in-memory
-- **Photo handling:** Base64 JPEG, resized to max 800×600, 70% quality. Stored in Firebase as string values. Photos excluded from initial load gate — app renders immediately without waiting for photo data.
+- **Data validation:** `sanitize(key, data, initial)` called on both initial load and sync events. `SCHEMA_TYPES` maps each key to its expected type. `record-*` schemas drop individual invalid entries; `array`/`object` schemas fall back to initial on type mismatch. Console warnings logged for dropped fields.
+- **Schema versioning:** `SCHEMA_VERSION = 1`, `MIGRATIONS = []`. `runMigrations()` runs once after load (guarded by `migrationsRun` ref). Reads `elim3-schema-version` from storage, runs migrations sequentially, writes new version. First real migration will be the photo blob split.
+- **Photo handling:** Base64 JPEG, resized to max 800×600, 70% quality. Stored in Firebase as string values in single `elim3-photos` blob. Photo blob split (individual keys per slot) is next structural improvement (P3).
 - **Theme:** "Warm Night" — 4-state color system (orange #D4763A / green #5CB87A / dashed-dim for unassigned / neutral), warm cream text (#F0E6D8), dark warm background (#111010)
 - **Brand mark:** SVG `ElimLogo` component — two right-pointing chevrons + block E, sharp corners, scaled 82% inside circle
 - **Countdown timer:** `timerColor()` helper returns green/yellow/red based on remaining %. Timer state: `{startedAt, accumulated, targetMinutes}`. Auto-pauses at zero. Auto-stops at 100% non-post-event completion via `autoStoppedRef` (one-way gate per session).
@@ -324,21 +333,22 @@ Managed dynamically via Settings. Default roster: Glenn, Sunny, Omar, Mitch, Mic
 - **Signal Flow:** `SignalFlowView` component with three SVG sections using helper sub-components (Box, Arrow, Label, HLine, VLine). Audio viewBox 570×660. Video 480×510. Network 480×360. Color-coded: orange/purple/green.
 - **Header positioning:** `position: fixed; top: 0` with `paddingTop: calc(env(safe-area-inset-top, 0px) + 8px)`. Body has `padding-top: 0`. Background extends behind iOS status bar. `overflow-x: clip` on body. Header spacer div: 48px height.
 - **Back swipe:** `useBackSwipe` hook with follow-finger drag gesture. Real-time `translateX` via direct DOM manipulation (refs, not state). 35% screen width threshold. `data-no-swipe` attribute excludes photo scroll areas. Top-left zone (top 80px, left 120px) excluded.
-- **Scroll restoration:** Retry-based restore with up to 10 attempts and 5px tolerance. Handles async-loaded views (I/O, Repairs) where content renders after initial scroll attempt.
+- **Scroll restoration:** Retry-based restore with up to 10 attempts and 5px tolerance. Handles async-loaded views (I/O) where content renders after initial scroll attempt.
 - **Crew focused views:** `MyTasksView` accepts `targetUser` prop. `__unassigned__` special value filters to tasks with no assignee. Sections auto-collapse when all tasks are complete; tap header to toggle.
 - **Unassigned styling:** `CheckItem` computes `isUnassigned` from `!assignee && !checked`, applies dashed border + dim italic. Section headers compute `unassignedCount`.
 - **Card styling:** Computed via `cardStyle` function to avoid CSS property conflicts (especially `border` vs `borderLeft`).
 - **Dependency warnings:** `dependsOn` property on task items. CheckItem checks prerequisite completion before toggling. Amber modal with Continue/Cancel.
-- **I/O Line List:** Persistent via `useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST)` owned by `ElimProductionApp`, passed as props to `IOListView`. Three tabs (Stage Box, Wing, Dante) organized by physical device. Stage Box has Inputs/Outputs pill-style sub-toggle — inputs grouped by `STAGE_BOX_GROUPS` constant (6 channel-range sections with "Other" fallback), outputs split into IEM vs Infrastructure by `isIEM()` helper matching destination field. In-ear snake renders as 🎧 pill badge. Cross-tab search via `matchesSearch()` filters all sections simultaneously, hides normal tab view during search. Editing uses draft-based flow — edits modify a local clone, not live state. "✓ Done" triggers confirm modal; Save writes draft to `useStorage` → Firebase. Edit restricted to Sam and Bri via `currentUser` prop. Custom `IODropdown` component replaces native `<select>` for type and protocol fields. No reset-to-defaults button.
-- **IODropdown component:** Lightweight custom dropdown matching `AssignDropdown` visual pattern — click to open, dark `#1C1A18` dropdown panel, hover highlights, checkmark on current selection, click-outside-to-close. Used for Stage Box input type (XLR, DI/XLR, Line, 1/4") and Dante protocol (Dante, Analog, AES50, USB).
+- **I/O Line List:** Persistent via `useStorage("elim3-io-config", DEFAULT_IO_LINE_LIST)` owned by `ElimProductionApp`, passed as props to `IOListView`. 3-tab layout (Stage Box with Inputs/Outputs sub-toggle, Wing, Dante). Inputs grouped by channel range (Drums, Instruments, Talk Backs, Vocals, Wireless, Crowd). Outputs split by IEM vs Infrastructure based on destination field. In-ear snake shown as accent pill badge with 🎧 prefix. Cross-tab search. Editing uses draft-based flow restricted to Sam and Bri. Custom `IODropdown` component for type/protocol fields.
+- **dB Meter:** `DecibelMeterView` component with Web Audio API pipeline. `getUserMedia` with `echoCancellation: false, autoGainControl: false, noiseSuppression: false`. `AnalyserNode` with `fftSize: 4096`, `smoothingTimeConstant: 0`. dBFS from time-domain RMS (`getFloatTimeDomainData`). dBA from frequency-domain with IEC 61672 A-weighting per FFT bin (`getFloatFrequencyData`). EMA smoothing at 0.85. Peak hold (2s hold, ~3dB/s decay) for both dBFS and dBA. Estimated SPL = dBA + 94 + calibration offset. Dashboard card conditional on `currentUser === "Sam" || currentUser === "Tyler"`. Cleanup: stops tracks, closes AudioContext, cancels rAF on unmount.
 - **No auth:** User selects name on launch, no passwords. Remember-me via localStorage.
 - **Shared state:** All data shared (visible to all users) via Firebase
 - **Hosting:** Firebase Hosting (free tier: 10GB bandwidth/month, 1GB database storage)
-- **Error boundary:** `ErrorBoundary` class component wraps `ElimProductionApp` at mount point. Catches render errors, shows reload prompt. Prevents white-screen crashes from propagating.
+- **Error boundary:** `ErrorBoundary` class component wraps `ElimProductionApp` at mount point. Catches render errors, shows reload prompt + "Export Backup" button (dumps all `elim3-*` keys as downloadable JSON). Prevents white-screen crashes from propagating.
 - **Atomic reset:** `newWeek` writes `elim3-pending-reset` flag before clearing state. On load, `useEffect` checks for flag and completes interrupted resets.
 - **Orphan cleanup:** Task deletion removes entries from `checks`, `assignments`, `taskNotes`, and `completions`. Roster removal clears affected assignments and shows a blast-radius warning listing the tasks that will be unassigned.
 - **Tap targets:** Checkboxes use 44px minimum tap target size per mobile accessibility guidelines.
 - **Performance:** `allItems` memoized via `useMemo(, [checklistData])`. `CheckItem` wrapped in `React.memo`. Photos excluded from initial load gate. Static style objects and arrays hoisted to module scope.
+- **Deploy script:** `./deploy.sh` in workspace root — `git push origin main --force && firebase deploy --only hosting`
 
 ---
 
@@ -350,4 +360,4 @@ Managed dynamically via Settings. Default roster: Glenn, Sunny, Omar, Mitch, Mic
 - **Don't add TypeScript.** The Babel CDN handles JSX transformation. TypeScript would require a build step.
 - **Don't add CSS frameworks.** Tailwind, styled-components, etc. would either require a build step or add CDN weight. Inline styles work fine at this scale.
 - **Don't refactor the navigation to React Router.** The custom navigation is simple and works. Router adds complexity and a dependency.
-- **Don't over-architect.** This is a ~2,500 line app for 16 volunteers. Context providers, state management libraries, and abstraction layers are overkill unless they solve a concrete, measurable problem.
+- **Don't over-architect.** This is a ~3,100 line app for 16 volunteers. Context providers, state management libraries, and abstraction layers are overkill unless they solve a concrete, measurable problem.

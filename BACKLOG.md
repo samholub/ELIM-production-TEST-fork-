@@ -2,13 +2,13 @@
 
 All planned work, organized by priority and category. Items move to CHANGELOG.md when shipped.
 
-Last updated: 2026-04-01
+Last updated: 2026-04-02
 
 ---
 
 ## Priority 0: Active Bugs
 
-(none)
+(None)
 
 ---
 
@@ -32,27 +32,23 @@ Last updated: 2026-04-01
 
 ## Priority 1: UX Improvements
 
-### Completion Feel
-- Brief animation on task check-off
-- Section completion celebration (subtle)
-- 100% overall completion moment
-- "You're done! X tasks still unassigned" proactive nudge when personal tasks complete
+(No active P1 items)
 
 ---
 
 ## Priority 1: Completed
 
-### ~~I/O Page Redesign~~ — SHIPPED in v5.11.0
-Shipped as: 3 tabs (Stage Box, Wing, Dante) with Inputs/Outputs sub-toggle on Stage Box. Stage Box inputs grouped into 6 sections (Drums, Instruments, Talk Backs, Vocals, Wireless, Crowd) with "Other" fallback. Outputs grouped into IEM/Infrastructure by destination. In-ear snake pill badge (🎧). Cross-tab search. Edit gated to Sam and Bri. Compact pencil edit button. Custom IODropdown replacing native selects.
 ### ~~Navigation Model~~ — SHIPPED in v5.7.0
 ### ~~Reduce Visual Noise~~ — SHIPPED in v5.7.0 / v5.8.0
 ### ~~My Tasks Collapsible Sections~~ — SHIPPED in v5.9.0
+### ~~I/O Page Redesign~~ — SHIPPED in v5.11.0
+(3 tabs, 6 input groups, IEM/Infrastructure output split, 🎧 pill badge, cross-tab search, edit restricted to Sam/Bri, IODropdown, compact pencil edit)
 
 ---
 
 ## Priority 2: Checklist Task Corrections
 
-(none active — cs-1b fixed in v5.11.0)
+(No active P2 items)
 
 ---
 
@@ -72,35 +68,33 @@ Shipped as: 3 tabs (Stage Box, Wing, Dante) with Inputs/Outputs sub-toggle on St
 
 ### Photo Blob Split
 - **What:** All photos stored as base64 strings in a single `elim3-photos` JSON blob. Each upload rewrites the entire blob. At scale (30+ photo slots, 50-100KB each), this means 2-3MB downloaded on every app load across 16 devices.
-- **Fix:** Split into individual storage keys (`elim3-photo-{slot}`). Migration: read old blob, write individual keys, delete blob. Don't move to Firebase Storage (adds SDK weight and auth complexity) — individual RTDB keys are fine at this scale.
-- **Risk:** Biggest structural scalability issue. Current auto-resize (800×600, 70% JPEG) buys time but doesn't solve the architecture.
+- **Fix:** Split into individual storage keys (`elim3-photo-{slot}`). Migration: read old blob, write individual keys, delete blob. Use the `SCHEMA_VERSION` / `MIGRATIONS` scaffold (shipped in v5.12.0) for the first real migration.
+- **Risk:** Biggest structural scalability issue. Current auto-resize (800×600, 70% JPEG) buys time but doesn't solve the architecture. No photos currently uploaded, so migration is trivial right now.
+- **Scope:** ~60-80 lines across 4-5 code locations. Custom `usePhotoStorage` hook, migration function, loaded gate update, error boundary backup update. Full session, not a quick fix.
 
-### Data Validation on Load
-- **What:** Every `useStorage` call trusts whatever comes back from Firebase. If a value is corrupted or wrong type, the app white-screens. Open Firebase rules + 16 concurrent writers = one malformed write from a crash.
-- **Fix:** Add `sanitize(key, data, schema)` function called inside `useStorage` after parsing. Each key gets a simple schema: `elim3-checks` = `Record<string, boolean>`, `elim3-assign` = `Record<string, string>`, etc. Malformed fields dropped, missing fields get defaults.
-- **Effort:** Small — ~30-40 lines, called once per key on load.
+---
 
-### Schema Versioning
-- **What:** No way to detect and migrate data format changes non-destructively. Currently handled with full resets, but as persistent data grows (I/O config, repairs, history, photos), resets become more expensive.
-- **Fix:** Add `elim3-schema-version` (integer, starts at 1). On load, if stored version < current version, run `migrations` array of functions sequentially. Start simple — just having the version number in place enables future migrations.
-- **Effort:** Small.
+## Priority 3: Completed
 
-### Error Boundary Data Export
-- **What:** Current error boundary only has "Tap to Reload." If the app crashes and can't recover after reload, Sam can't access the data.
-- **Fix:** Add "Export Backup" button alongside "Tap to Reload" that dumps all Firebase data keys as JSON.
-- **Effort:** Small — one button, one function.
+### ~~Data Validation on Load~~ — SHIPPED in v5.12.0
+(`sanitize()` function with `SCHEMA_TYPES` in `useStorage` read path)
+
+### ~~Schema Versioning~~ — SHIPPED in v5.12.0
+(`SCHEMA_VERSION = 1`, `MIGRATIONS` array scaffold, `runMigrations()`)
+
+### ~~Error Boundary Data Export~~ — SHIPPED in v5.12.0
+("Export Backup" button dumps all `elim3-*` keys as downloadable JSON)
 
 ---
 
 ## Priority 4: Code Quality
 
-### Remove dead weight
-- Delete `PlaceholderView` component if still present
-- Remove any remaining placeholder routes from main app component
+### ~~Remove dead weight~~ — DONE (verified v5.12.0)
+PlaceholderView removed, no dead routes or placeholder nav cards remain.
 
 ### Reduce duplication
-- Extract `JSON.parse(JSON.stringify())` deep clone calls into `deepClone()` utility (used 8+ times)
-- Extract common edit toolbar pattern (used in Checklist, I/O, Repairs) into shared component
+- Extract `JSON.parse(JSON.stringify())` deep clone calls into `deepClone()` utility (8 instances across ChecklistView and IOListView)
+- **Status:** Low value — cosmetic cleanup only, no behavior change. Skip unless doing a broader refactor pass.
 
 ### Evaluate
 - Signal Flow SVGs (~200 lines of hand-crafted SVG) — keep as-is. Photos are easier to update but SVGs are always sharp and professional. The maintenance burden is low since the signal chain changes rarely.
@@ -164,11 +158,11 @@ This week vs reference photos. Reference photos already live in task expand slot
 ### Training Mode
 Expanded instructions + video links. Belongs in a Google Doc or printed SOP, not inline in a speed-optimized checklist.
 
-### In-App Decibel Meter
-Web Audio API SPL meter restricted to Sam/Tyler. Phone mics are uncalibrated. NIOSH SLM app or dedicated SPL meter does this better. Wrong tool for a setup checklist app.
+### Completion Feel (Animations)
+Check-off animations, section celebrations, 100% completion moment. Evaluated and rejected — the progress bar, section auto-collapse, and timer auto-stop already provide sufficient completion feedback. Animations add code weight and rendering overhead for zero Sunday morning value. This is a task-oriented tool used while holding cables, not a consumer engagement app.
 
 ### Shazam-like Song Identification
-Requires external API + subscription. Shazam already exists as a free app. Zero Sunday morning value.
+Requires external API (AudD, $5/1000 requests after 300 free). Shazam already exists as a free app on every phone. Zero overlap with setup coordination. Fails the Sunday morning test.
 
 ### Song Key Signature Detection
 Browser-based pitch detection fails for polyphonic live music. If someone needs the key, they have chord charts. Setlist/planning problem, not a production setup problem.

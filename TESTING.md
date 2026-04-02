@@ -1,6 +1,6 @@
 # Pre-Deployment Testing Checklist
 
-Quick validation before taking this into a real Sunday setup. Current as of **v5.11.0**.
+Quick validation before taking this into a real Sunday setup. Current as of **v5.12.0**.
 
 ---
 
@@ -15,7 +15,7 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **Cross-device sync** — check a box on Phone A, appears on Phone B within 1-2 seconds
 - [ ] **My Tasks loads** — app opens to My Tasks view showing only your assigned tasks
 - [ ] **Timer works** — start timer, verify it counts up and syncs to second device
-- [ ] **I/O Line List loads** — 3 tabs (Stage Box, Wing, Dante) render with data; Stage Box sub-toggle switches between Inputs and Outputs
+- [ ] **I/O Line List loads** — three tabs (Stage Box, Wing, Dante) render with data
 - [ ] **Back navigation** — back button and swipe-back both return to previous view
 
 ---
@@ -31,7 +31,6 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **Timer sync** — start timer on Phone A, Phone B shows same running time; pause on B, A stops
 - [ ] **Countdown sync** — set a 45-min countdown on Phone A, Phone B shows same countdown with matching colors
 - [ ] **I/O sync** — edit an I/O label on Phone A, change appears on Phone B after save
-- [ ] **Repairs sync** — edit a repair item on Phone A, change appears on Phone B within 1-2 seconds
 
 ### Offline & Recovery
 - [ ] **Offline write preserved** — airplane mode on, check a box, airplane mode off → checkbox persists (not reverted)
@@ -40,8 +39,15 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **Offline banner** — offline warning banner appears when device loses connectivity
 - [ ] **Sync error indicator** — 🔴 appears when Firebase writes fail after retries
 
-### Null Safety
-- [ ] **Null doesn't crash** — (via Firebase console) set `elim3-checks` to `null`; app falls back to empty state, no white screen
+### Data Validation
+- [ ] **Invalid type rejected** — (via Firebase console) set `elim3-checks` to a string like `"bad"`; app falls back to empty object `{}`, no white screen
+- [ ] **Invalid entries dropped** — (via Firebase console) add a non-boolean entry to `elim3-checks` like `"fake-id": "hello"`; on load, that entry is dropped; valid boolean entries preserved
+- [ ] **Array type enforced** — set `elim3-history` to an object `{}`; app falls back to empty array `[]`
+- [ ] **Console warnings** — open browser console; corrupted data logs `sanitize: ...` warnings
+
+### Schema Versioning
+- [ ] **Version stored** — after first load, `elim3-schema-version` exists in Firebase with value `1`
+- [ ] **No re-run** — subsequent loads do not log "Running migration" (already at current version)
 
 ---
 
@@ -58,40 +64,34 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **Partial swipe snaps back** — dragging less than 35% springs content back
 - [ ] **Header zone excluded** — swipe starting in top-left corner (top 80px, left 120px) does NOT trigger gesture
 - [ ] **Photo areas excluded** — swiping in photo scroll areas doesn't trigger back navigation
-- [ ] **Mid-screen swipe works** — swipe-back triggers normally from center or bottom of screen
-- [ ] **Back button still reliable** — ← button in header always navigates back, never intercepted by swipe
 
 ### Scroll Preservation
-- [ ] **Preserved on navigate** — scroll to middle of checklist, tap back, re-enter → same position
-- [ ] **Preserved on swipe-back** — swipe gesture preserves position same as back button
-- [ ] **Fresh on new view** — navigating to a view for the first time starts at top
+- [ ] **Scroll restored** — scroll deep into Checklist, navigate to I/O, come back; scroll position restored
+- [ ] **Dashboard starts at top** — returning to Dashboard always starts at top
+- [ ] **Async views restore** — scroll deep into I/O List, navigate away and back; position restored despite async load
 
 ---
 
 ## Timer & Progress
 
 ### Timer Basics
-- [ ] **First box doesn't start timer** — check one box, timer does NOT auto-start
-- [ ] **Second box starts timer** — check a second box, timer auto-starts
-- [ ] **Uncheck doesn't stop** — uncheck one of two checked boxes, timer keeps running
-- [ ] **Timer persists** — set countdown, refresh page — countdown resumes with correct remaining time
+- [ ] **Start/pause** — tap timer to toggle running state
+- [ ] **Count-up mode** — timer counts up by default (no target set)
+- [ ] **Syncs across devices** — running state and elapsed time match on all devices
 
 ### Countdown Timer
-- [ ] **No target set** — dashboard shows count-up time with "⏱ Set Timer" link
-- [ ] **Timer picker** — tapping "Set Timer" opens inline picker with 30/45/60/90 presets + custom input
-- [ ] **Set preset** — tap "60m", timer area shows "60:00" countdown
-- [ ] **Color green** — countdown above 50% remaining shows green text
-- [ ] **Color yellow** — countdown between 25-50% remaining shows yellow/amber text
-- [ ] **Color red** — countdown below 25% remaining shows red text
-- [ ] **Auto-pause at zero** — when countdown reaches 0:00, timer stops and shows "⏰ Time!"
-- [ ] **Change target** — "change" link opens picker to set a new target
-- [ ] **Remove countdown** — "Remove countdown (use count-up)" option reverts to elapsed timer
-- [ ] **Custom input** — can enter a custom number (e.g., 75 minutes) and it works
-- [ ] **Timer in headers** — countdown with matching colors visible in sticky header on Checklist and My Tasks views
+- [ ] **Presets work** — tap "⏱ Set Timer", select 30/45/60/90 minutes
+- [ ] **Custom value** — enter a custom number, press "Set"
+- [ ] **Color transition** — green above 50%, yellow 25-50%, red below 25%
+- [ ] **Auto-pause at zero** — countdown stops automatically when it reaches 0:00
+- [ ] **Timer text shows countdown** — displays remaining time, not elapsed
+- [ ] **Remove countdown** — "Remove countdown" link switches back to count-up mode
+- [ ] **Target persists** — set a 60-min countdown, refresh page → still showing countdown
 
 ### Timer Auto-Stop
-- [ ] **Auto-stop at 100%** — when all non-post-event tasks are checked, timer automatically pauses
-- [ ] **One-way gate** — after auto-stop, unchecking a task does NOT restart the timer
+- [ ] **Stops at 100%** — check all non-post-event tasks; timer auto-pauses
+- [ ] **One-way gate** — uncheck a task after auto-stop; timer does NOT restart
+- [ ] **Reset clears gate** — reset checklist, then timer can auto-stop again on next 100%
 
 ### Post-Event Exclusion
 - [ ] **Dashboard excludes post-event** — progress percentage on dashboard does NOT count Post-Event section tasks
@@ -113,7 +113,6 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **Stacked layout** — percentage on top, timer below, separated by divider line
 - [ ] **Progress tap** — tapping progress zone navigates to full checklist
 - [ ] **Timer isolated** — tapping timer controls doesn't navigate to checklist
-- [ ] **History line** — "Last: {date} — {pct}% in {time}" visible below timer
 
 ### Crew Status
 - [ ] **Per-person progress** — each crew member with progress bar
@@ -126,6 +125,11 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **1×3 grid** — I/O Line List, Power Sequence, Signal Flow
 - [ ] **No Checklist card** — checklist access only via hero "View all →"
 - [ ] **No Settings card** — settings access only via header ⚙️
+
+### dB Meter Card
+- [ ] **Visible to Sam** — log in as Sam, dB Meter card appears below nav grid
+- [ ] **Visible to Tyler** — log in as Tyler, dB Meter card appears
+- [ ] **Hidden from others** — log in as any other name, no dB Meter card
 
 ---
 
@@ -145,8 +149,8 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **Unassign option** — appears only when a name is already assigned
 - [ ] **Current selection marked** — assigned name shows with ✓ prefix and accent color
 - [ ] **Power sequence badge** — ⚡ badge with number on right side of relevant task cards
-- [ ] **Detail visible** — tasks with `item.detail` show text below assignee, up to 5 lines (hidden when checked)
-- [ ] **Detail doesn't overflow** — long detail text wraps within card boundaries on mobile
+- [ ] **Detail visible** — tasks with `item.detail` show text below assignee without expanding (hidden when checked)
+- [ ] **Detail overflow** — long detail text clamps at 5 lines with word-break
 - [ ] **Note preview** — tasks with saved notes show 📌 preview below detail (hidden when checked)
 - [ ] **Note preview hides on expand** — expanding a task hides the preview (full editor shown instead)
 - [ ] **Unassigned styling** — unassigned unchecked tasks show dashed border, lighter background, italic dimmed text
@@ -180,9 +184,6 @@ Do these first. If any fail, stop and fix before Sunday.
 - [ ] **No false warnings** — checking a task after its dependency is met produces no warning
 - [ ] **Only dependsOn tasks** — tasks without `dependsOn` property never trigger warnings
 
-### CHECKLIST_VERSION Stamp
-- [ ] **Version mismatch resets structure** — if code's `CHECKLIST_VERSION` changes, stale `elim3-checklist-data` is deleted on load and rebuilt from `CHECKLIST_DATA` constants
-
 ---
 
 ## My Tasks
@@ -211,97 +212,100 @@ Do these first. If any fail, stop and fix before Sunday.
 
 ## I/O Line List
 
-### Tab Structure
+### Display
 - [ ] **Three tabs** — Stage Box, Wing, Dante
-- [ ] **No Outputs tab** — outputs are under Stage Box via sub-toggle
-- [ ] **Sub-toggle on Stage Box** — Inputs/Outputs pill-style segmented control appears below tab bar when Stage Box is selected
-- [ ] **Sub-toggle not on other tabs** — Wing and Dante tabs do not show the sub-toggle
-- [ ] **Defaults to Inputs** — Stage Box opens with Inputs sub-view selected
-
-### Stage Box — Inputs
-- [ ] **6 group headers** — Drums (12), Instruments (13), Talk Backs (2), Vocals (9), Wireless (4), Crowd (4)
-- [ ] **Group header format** — uppercase label, thin divider line, channel count on right
-- [ ] **Channels under correct groups** — channel numbers match group ranges (e.g., ch 1-12 under Drums)
-- [ ] **44 total channels** — all stage box channels render
-- [ ] **Channel numbers sorted** — numerically sorted within each group
-- [ ] **"Other" group** — user-added channels with out-of-range numbers appear under "Other" at bottom
+- [ ] **Stage Box sub-toggle** — Inputs / Outputs toggle below tabs (only visible on Stage Box tab, not during search)
+- [ ] **44 inputs** — all stage box channels render in Inputs sub-view
+- [ ] **6 input groups** — Drums (1-12), Instruments (13-25), Talk Backs (26-27), Vocals (28-36), Wireless (37-40), Crowd (41-44) with section headers and counts
+- [ ] **Wing Direct Inputs** — Bianca TB and ProPresenter Dante entries
+- [ ] **Outputs — IEM group** — outputs with "in-ear" destination grouped under "In-Ear Monitors" header
+- [ ] **Outputs — Infrastructure group** — subs and mains grouped under "Infrastructure" header
+- [ ] **18 outputs total** — all output entries render across both groups
+- [ ] **Dante** — 5 routes render
+- [ ] **Channel numbers** — inputs sorted numerically (1, 2, 3... not 1, 10, 2)
 - [ ] **Type badges** — input type shown (XLR, DI/XLR, Line, 1/4")
-
-### Stage Box — Outputs
-- [ ] **IEM group** — "In-Ear Monitors" header with IEM pack channels (destination contains "in-ear" or "in ear")
-- [ ] **Infrastructure group** — "Infrastructure" header with subs, mains, unused channels
-- [ ] **18 total outputs** — all output entries render
-- [ ] **In-ear snake badge** — channels with `inEarSnake` data show 🎧 pill badge (e.g., "🎧 Michael", "🎧 Snake 7")
-- [ ] **Badge styling** — accent glow background, accent border, bold text, pill shape
-- [ ] **No badge when empty** — channels without `inEarSnake` data show no badge
-
-### Wing Tab
-- [ ] **2 entries** — Bianca TB and ProPresenter Dante entries render
-- [ ] **Unchanged** — no group headers or sub-toggle on Wing tab
-
-### Dante Tab
-- [ ] **5 routes** — all Dante routing entries render
-- [ ] **Unchanged** — no group headers on Dante tab
+- [ ] **In-ear snake pill badge** — `inEarSnake` value rendered as accent pill with 🎧 prefix on relevant output entries
 
 ### Cross-Tab Search
-- [ ] **🔍 icon** — search icon visible in toolbar
-- [ ] **Opens input** — tapping 🔍 opens search text field
-- [ ] **Cross-tab results** — searching shows matching items from all sections (Stage Box, Wing, Outputs, Dante)
-- [ ] **Section headers in results** — results grouped by section with labeled headers
-- [ ] **Match count** — total result count displayed
-- [ ] **Hides normal view** — tab content and sub-toggle hidden during active search
-- [ ] **Empty state** — "No matches" message when search finds nothing
-- [ ] **Clear restores** — clearing search text returns to normal tab/sub-toggle view
-- [ ] **Case-insensitive** — search matches regardless of capitalization
-- [ ] **Searches all fields** — matches channel number, label, notes, destination, inEarSnake, protocol, from/to
+- [ ] **🔍 toggle** — search icon toggles search field visibility
+- [ ] **Search spans all tabs** — results from Stage Box, Wing, Outputs, and Dante shown grouped with section headers
+- [ ] **Result count** — total match count shown at top
+- [ ] **Sub-toggle hidden** — Stage Box Inputs/Outputs toggle hidden during search
+- [ ] **Case-insensitive** — search works regardless of capitalization
+- [ ] **No matches message** — shows "No matches for ..." when nothing found
 
-### Edit Permissions
-- [ ] **Sam sees edit** — log in as Sam, ✏️ pencil visible in toolbar
-- [ ] **Bri sees edit** — log in as Bri, ✏️ pencil visible in toolbar
-- [ ] **Others don't** — log in as any other name, no edit button visible
-- [ ] **Compact pencil** — edit button is a small ✏️ icon (not full-width "Edit I/O")
-
-### Draft-Based Editing
+### Draft-Based Editing (Sam + Bri only)
+- [ ] **Edit button visible** — log in as Sam or Bri, ✏️ button visible
+- [ ] **Others don't see it** — log in as any other name, ✏️ button NOT visible
 - [ ] **Enter edit mode** — tap ✏️, inline inputs appear for all fields
-- [ ] **✓ Done + Cancel** — compact buttons replace pencil during editing
-- [ ] **Channel number edits** — can edit channel numbers
+- [ ] **Channel number edits** — can edit channel numbers (text input, accepts any text)
 - [ ] **Label edits** — can edit channel labels
 - [ ] **Notes edits** — can edit notes field
-- [ ] **Custom type dropdown** — inputs tab shows IODropdown for type (XLR, DI/XLR, Line, 1/4") with dark theme, hover highlights, checkmark on current
-- [ ] **Custom protocol dropdown** — Dante tab shows IODropdown for protocol (Dante, Analog, AES50, USB) with same styling
-- [ ] **No native selects** — dropdowns are custom components, not browser-native `<select>`
-- [ ] **Add channel** — "+ Add Input" / "+ Add Output" / "+ Add Route" buttons in edit mode
-- [ ] **Remove channel** — ✕ button on each row in edit mode
+- [ ] **Type dropdown** — `IODropdown` component for type field (XLR, DI/XLR, Line, 1/4")
+- [ ] **Protocol dropdown** — `IODropdown` component for Dante protocol field (Dante, Analog, AES50, USB)
+- [ ] **Add channel** — "+ Add" button at bottom in edit mode; new blank channel appears
+- [ ] **Remove channel** — × button on each row in edit mode; removes immediately
 - [ ] **Confirm modal on save** — tapping "✓ Done" triggers confirm modal before writing
 - [ ] **Save writes to Firebase** — confirming save persists changes to all devices
 - [ ] **Discard option** — can discard draft changes without saving
-- [ ] **All sections editable** — Stage Box inputs, Stage Box outputs, Wing, and Dante all support editing
+- [ ] **Cancel button** — exits edit mode without modal
+- [ ] **All tabs editable** — Stage Box (Inputs and Outputs), Wing, and Dante tabs all support editing
 
 ### Auto-Sort & Duplicate Detection
 - [ ] **Auto-sort on blur** — editing a channel number and blurring re-sorts list numerically
 - [ ] **Non-numeric at end** — entries like "L/R Main" sort after numeric entries
 - [ ] **Sort preserves data** — labels, notes, types stay with correct channel numbers after sort
 - [ ] **Duplicate inputs highlighted** — two inputs sharing a channel number show red styling
-- [ ] **Duplicate outputs highlighted** — same behavior on outputs
+- [ ] **Duplicate outputs highlighted** — same behavior on Outputs sub-view
 - [ ] **No false positives** — unique channel numbers show normal styling
 - [ ] **Dante unaffected** — Dante tab has no auto-sort or duplicate checks
 
 ---
 
-## Repairs Tracker
+## dB Meter (Sam + Tyler only)
 
-- [ ] **Search visible** — search input at top of Repairs view
-- [ ] **Search filters** — filters by item name and issue description, case-insensitive
-- [ ] **Item count updates** — count reflects filtered results (e.g. "2 items of 6")
-- [ ] **Edit mode toggle** — "✏️ Edit Repairs" enters edit mode; "✓ Done Editing" exits
-- [ ] **Inline edits** — item name and issue description editable in edit mode
-- [ ] **Priority dropdown** — changeable in edit mode; updates badge color immediately
-- [ ] **Priority colors** — Urgent = red, Soon = orange/amber, Low = green
-- [ ] **Delete item** — ✕ button removes item immediately
-- [ ] **Add repair** — "+ Add Repair" at bottom in edit mode; hidden during search
-- [ ] **Reset button** — restores to default items with confirmation flow
-- [ ] **Edits persist** — edit an item, exit edit mode, refresh → edit persists
-- [ ] **Cross-device sync** — edit on Phone A, change appears on Phone B within 1-2 seconds
+### Access
+- [ ] **Card visible** — log in as Sam or Tyler, dB Meter card visible on dashboard below nav grid
+- [ ] **Card hidden** — log in as any other name, no dB Meter card
+- [ ] **View loads** — tap dB Meter card, meter view opens
+- [ ] **Back navigation** — back button and swipe return to dashboard
+
+### Microphone
+- [ ] **Permission prompt** — first visit prompts for microphone access
+- [ ] **Denied state** — if denied, shows "Microphone access denied" with retry button
+- [ ] **Retry works** — tapping retry re-requests permission
+- [ ] **AGC disabled** — verify via browser dev tools that `autoGainControl: false` is set on the media stream
+
+### Readings
+- [ ] **dBFS displayed** — large centered number showing current level in dBFS
+- [ ] **dBA displayed** — A-weighted reading shown in secondary row
+- [ ] **Est. SPL displayed** — estimated SPL shown in secondary row (dBA + 94 + cal offset)
+- [ ] **Meter bar** — horizontal bar fills left-to-right tracking dBFS level
+- [ ] **Color zones** — bar green below -20dB, yellow -20 to -6, red above -6
+- [ ] **Peak marker** — thin vertical line on bar at peak position
+- [ ] **Peak values** — peak dBFS and peak dBA shown as numbers
+- [ ] **Scale labels** — -60, -40, -20, 0 labels below the bar
+- [ ] **Responsive** — readings update smoothly in real-time
+- [ ] **Silent room** — quiet room reads around -40 to -50 dBFS (not stuck at -60)
+- [ ] **Loud clap** — clapping near phone spikes the meter noticeably
+
+### Peak Hold
+- [ ] **Peak captures** — loud sound sets peak marker; it stays for ~2 seconds
+- [ ] **Peak decays** — after 2 seconds, peak marker slowly falls toward current level
+
+### Calibration
+- [ ] **+/- buttons work** — tapping + increases offset by 1, - decreases by 1
+- [ ] **Offset shown** — "Cal: +X dB" or "Cal: -X dB" displayed
+- [ ] **SPL adjusts** — Est. SPL changes immediately when offset changes
+- [ ] **Session only** — offset resets on page reload (not persisted)
+
+### Guide
+- [ ] **Toggle works** — "How This Works" expands/collapses guide section
+- [ ] **Content present** — dBFS, A-Weighted, Est. SPL, Peak, calibration, accuracy sections all render
+
+### Cleanup
+- [ ] **Navigate away** — go back to dashboard; no audio continues (mic stops, no console errors)
+- [ ] **Re-enter** — navigate back to dB Meter; starts fresh with new mic stream
 
 ---
 
@@ -406,22 +410,28 @@ Do these first. If any fail, stop and fix before Sunday.
 
 ## Error Handling
 
-- [ ] **Error boundary renders** — if a component throws, shows "Something went wrong — Tap to Reload" instead of white screen
+- [ ] **Error boundary renders** — if a component throws, shows "Something went wrong" instead of white screen
 - [ ] **Reload button works** — tapping "Tap to Reload" refreshes the page
+- [ ] **Export backup button** — "Export Backup" button visible alongside reload button
+- [ ] **Export downloads JSON** — tapping "Export Backup" downloads a JSON file with all `elim3-*` keys
+- [ ] **Export includes error** — downloaded JSON contains `error` field with the crash message
+- [ ] **Export includes timestamp** — downloaded JSON contains `exportedAt` ISO timestamp
 
 ---
 
 ## Known Limitations
 
-1. **Photos are base64 in Firebase** — works fine at current scale. Auto-resize (800×600, 70% quality) keeps payloads manageable. Photo blob split is a backlog item (P3).
+1. **Photos are base64 in Firebase** — works fine at current scale (no photos currently uploaded). Auto-resize (800×600, 70% quality) keeps payloads manageable. Photo blob split is the next P3 item.
 2. **No offline first-load** — if phone has never loaded the app and has no internet, it can't load. Add to Home Screen while online to cache.
 3. **No auth** — anyone with the URL can access the app. Fine for a small trusted team.
 4. **Firebase free tier limits** — 10GB bandwidth/month, 1GB database storage. More than enough for this team size.
 5. **Data persists across deploys** — redeploying only replaces code, never touches stored data.
 6. **Custom checklist tasks don't support dependsOn** — dependency warnings only work for built-in tasks.
-7. **Edit mode gates are name-based** — checklist restricted to Sam; I/O restricted to Sam and Bri. Weak gates but prevent accidental entry by other users.
+7. **Edit mode gate is name-based** — checklist restricted to `currentUser === "Sam"`, I/O restricted to Sam or Bri. A weak gate but prevents accidental entry by other users.
 8. **Concurrent note edits overwrite** — the entire `elim3-notes` object is written on every save. Last-write-wins for simultaneous edits.
 9. **Firebase rules are open** — read/write rules are unrestricted. Monitor for abuse if the URL leaks beyond the team.
+10. **dB Meter calibration not persisted** — calibration offset resets on page reload. Intentional — mic characteristics vary by session.
+11. **dB Meter accuracy** — phone mic-based; reliable for relative comparisons and quick level checks, not a replacement for a calibrated SPL meter.
 
 ---
 
