@@ -1,0 +1,53 @@
+REPLIT TASK PROMPT
+Add an expandable guide section to the bottom of DecibelMeterView. This goes inside the existing component — do not replace it.
+
+Inside DecibelMeterView, add a new state variable alongside the existing useState calls at the top of the function:
+jsxconst [guideOpen, setGuideOpen] = useState(false);
+
+Find the disclaimer line — the last React.createElement in the return that contains the text "Calibrate SPL against Wing meters. AGC/noise suppression disabled.". Immediately AFTER that element (but still inside the outer wrapping div), add this block:
+jsx,
+React.createElement("div", { style: { marginTop: 16 } },
+  React.createElement("div", { onClick: () => setGuideOpen(g => !g), style: {
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+    cursor: "pointer", padding: "8px 0", fontFamily: S.sans, fontSize: 13, color: S.accent, fontWeight: 600
+  }},
+    React.createElement("span", null, guideOpen ? "Hide Guide" : "How This Works"),
+    React.createElement("span", { style: { fontSize: 10, transition: "transform 0.2s", transform: guideOpen ? "rotate(180deg)" : "rotate(0)" } }, "▼")
+  ),
+  guideOpen && React.createElement("div", { style: {
+    marginTop: 8, padding: 14, background: S.card, border: `1px solid ${S.cardBorder}`,
+    borderRadius: 10, fontFamily: S.sans, fontSize: 12, lineHeight: 1.6, color: S.textMuted
+  }},
+    React.createElement("div", { style: { fontWeight: 700, color: S.text, marginBottom: 6, fontSize: 13 } }, "What the readings mean"),
+    React.createElement("div", { style: { marginBottom: 10 } },
+      React.createElement("span", { style: { fontWeight: 600, color: S.text } }, "dBFS (main number): "),
+      "Decibels relative to full scale — the raw digital level from your phone's mic. 0 dBFS is the absolute max before clipping. Typical live room levels sit between -30 and -6."
+    ),
+    React.createElement("div", { style: { marginBottom: 10 } },
+      React.createElement("span", { style: { fontWeight: 600, color: S.text } }, "A-Weighted (dBA): "),
+      "Same signal filtered through the standard A-weighting curve (IEC 61672), which rolls off lows and highs to match how your ears actually hear. More useful than raw dBFS for judging perceived loudness."
+    ),
+    React.createElement("div", { style: { marginBottom: 10 } },
+      React.createElement("span", { style: { fontWeight: 600, color: S.text } }, "Est. SPL: "),
+      "Estimated sound pressure level in dBA. This adds a fixed offset to the A-weighted reading to approximate real-world dB. Not calibrated out of the box — use the +/- buttons to align it with the Wing meters."
+    ),
+    React.createElement("div", { style: { marginBottom: 10 } },
+      React.createElement("span", { style: { fontWeight: 600, color: S.text } }, "Peak: "),
+      "Highest level in the last 2 seconds, then slowly decays at ~3 dB/sec. Shown as the thin marker on the bar and as numbers below each reading."
+    ),
+    React.createElement("div", { style: { fontWeight: 700, color: S.text, marginBottom: 6, marginTop: 14, fontSize: 13 } }, "How to calibrate"),
+    React.createElement("div", { style: { marginBottom: 10 } },
+      "Play a steady signal through the PA at a known level (read it off the Wing master meters). Hold your phone where you'd normally stand. Tap the +/- buttons until the Est. SPL number matches your reference. Once set, the offset stays for the session."
+    ),
+    React.createElement("div", { style: { fontWeight: 700, color: S.text, marginBottom: 6, marginTop: 14, fontSize: 13 } }, "Accuracy notes"),
+    React.createElement("div", null,
+      "Browser audio processing (AGC, noise suppression, echo cancellation) is disabled for accurate readings. Phone mics vary — this tool is reliable for relative comparisons and quick level checks, not a replacement for a calibrated SPL meter. The bar colors follow standard broadcast thresholds: green (safe), yellow (pushing it), red (clipping risk)."
+    )
+  )
+)
+
+What NOT to change:
+
+Do not modify any existing elements in DecibelMeterView — only append after the disclaimer
+Do not touch the dashboard card, view route, or any other component
+Do not change the S style object
