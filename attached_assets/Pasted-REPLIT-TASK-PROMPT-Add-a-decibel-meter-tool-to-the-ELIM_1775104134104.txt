@@ -1,0 +1,125 @@
+REPLIT TASK PROMPT
+Add a decibel meter tool to the ELIM Production App. This involves three changes: a new component, a conditional dashboard card, and a view route.
+
+CHANGE 1: Add DecibelMeterView component
+Add this new component immediately ABOVE the DashboardView function definition. Find the line that starts function DashboardView( and insert this entire block before it:
+jsxfunction DecibelMeterView() {
+  const [db, setDb] = useState(-60);
+  const [peak, setPeak] = useState(-60);
+  const [error, setError] = useState(null);
+  const streamRef = useRef(null);
+  const ctxRef = useRef(null);
+  const rafRef = useRef(null);
+  const smoothRef = useRef(-60);
+  const peakRef = useRef(-60);
+  const peakTimeRef = useRef(0);
+
+  const start = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const ctx = new AudioContext();
+      ctxRef.current = ctx;
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+      const buf = new Float32Array(analyser.fftSize);
+
+      const loop = () => {
+        analyser.getFloatTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+        const rms = Math.sqrt(sum / buf.length);
+        const raw = rms > 0 ? 20 * Math.log10(rms) : -60;
+        const clamped = Math.max(-60, Math.min(0, raw));
+        smoothRef.current = smoothRef.current * 0.85 + clamped * 0.15;
+        const now = Date.now();
+        if (clamped > peakRef.current) {
+          peakRef.current = clamped;
+          peakTimeRef.current = now;
+        } else if (now - peakTimeRef.current > 2000) {
+          peakRef.current = Math.max(clamped, peakRef.current - 0.05);
+        }
+        setDb(smoothRef.current);
+        setPeak(peakRef.current);
+        rafRef.current = requestAnimationFrame(loop);
+      };
+      rafRef.current = requestAnimationFrame(loop);
+      setError(null);
+    } catch (e) {
+      setError(e.name === "NotAllowedError" ? "Microphone access denied" : "Could not access microphone");
+    }
+  }, []);
+
+  useEffect(() => { start(); return () => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    if (ctxRef.current) ctxRef.current.close();
+  }; }, []);
+
+  if (error) return React.createElement("div", { style: { padding: 24, textAlign: "center" } },
+    React.createElement("div", { style: { fontSize: 16, color: S.text, marginBottom: 16, fontFamily: S.sans } }, error),
+    React.createElement("div", { onClick: start, style: { display: "inline-block", padding: "10px 20px", background: S.accent, color: "#fff", borderRadius: 8, cursor: "pointer", fontFamily: S.sans, fontSize: 14, fontWeight: 600 } }, "Allow Microphone")
+  );
+
+  const pct = ((db + 60) / 60) * 100;
+  const peakPct = ((peak + 60) / 60) * 100;
+  const barColor = db > -6 ? "#ef4444" : db > -20 ? "#f59e0b" : S.success;
+  const peakColor = peak > -6 ? "#ef4444" : peak > -20 ? "#f59e0b" : S.success;
+
+  return React.createElement("div", { style: { padding: "16px 16px 24px" } },
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginBottom: 8, fontFamily: S.mono, fontSize: 13 } },
+      React.createElement("span", { style: { color: S.textMuted } }, "dBFS"),
+      React.createElement("span", { style: { color: peakColor } }, `Peak: ${peak.toFixed(1)} dB`)
+    ),
+    React.createElement("div", { style: { position: "relative", height: 32, background: S.cardBorder, borderRadius: 6, overflow: "hidden" } },
+      React.createElement("div", { style: {
+        position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 6,
+        width: `${Math.max(0, pct)}%`, background: barColor, transition: "width 0.08s linear, background 0.15s"
+      }}),
+      React.createElement("div", { style: {
+        position: "absolute", top: 0, bottom: 0, width: 3, borderRadius: 1,
+        left: `calc(${Math.max(0, peakPct)}% - 1.5px)`, background: peakColor, opacity: 0.9
+      }})
+    ),
+    React.createElement("div", { style: { display: "flex", justifyContent: "space-between", marginTop: 4, fontFamily: S.mono, fontSize: 10, color: S.textMuted } },
+      React.createElement("span", null, "-60"),
+      React.createElement("span", null, "-40"),
+      React.createElement("span", null, "-20"),
+      React.createElement("span", null, "0")
+    ),
+    React.createElement("div", { style: { textAlign: "center", marginTop: 16 } },
+      React.createElement("span", { style: { fontSize: 48, fontWeight: 700, fontFamily: S.mono, color: barColor, transition: "color 0.15s" } }, db.toFixed(1)),
+      React.createElement("span", { style: { fontSize: 20, fontFamily: S.mono, color: S.textMuted, marginLeft: 4 } }, "dB")
+    )
+  );
+}
+
+CHANGE 2: Add conditional dB Meter card below the nav grid in DashboardView
+Inside the DashboardView function, find the closing </div> of the nav cards grid (the div with gridTemplateColumns). Immediately AFTER that closing </div>, add this block:
+jsx{(currentUser === "Sam" || currentUser === "Tyler") && (
+  <div onClick={() => onNavigate("db-meter")} style={{
+    background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 12,
+    padding: "14px 10px", cursor: "pointer", transition: "all 0.15s",
+    fontFamily: S.sans, textAlign: "center", marginTop: 8
+  }}
+  onMouseEnter={e => { e.currentTarget.style.borderColor = S.accentBorder; }}
+  onMouseLeave={e => { e.currentTarget.style.borderColor = S.cardBorder; }}>
+    <div style={{ fontSize: 22, marginBottom: 4 }}>🔊</div>
+    <div style={{ fontSize: 13, fontWeight: 700, color: S.text }}>dB Meter</div>
+    <div style={{ fontSize: 11, color: S.textMuted }}>Live mic level</div>
+  </div>
+)}
+
+CHANGE 3: Add view route
+Find the block of view conditionals (the lines with {view === "dashboard" && ...}, {view === "network" && ...}, etc.). After the last one ({view === "network" && <SignalFlowView />}), add:
+jsx{view === "db-meter" && <DecibelMeterView />}
+
+What NOT to change:
+
+Do not modify the DASHBOARD_CARDS constant — the dB card is separate, not part of that array
+Do not modify the nav grid's gridTemplateColumns — it stays "1fr 1fr 1fr"
+Do not modify any existing component or view
+Do not change the S style object
+Do not add any imports, build tools, or external libraries
