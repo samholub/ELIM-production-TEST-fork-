@@ -1886,15 +1886,30 @@ function PowerSeqView() {
   );
 }
 
+const STAGE_BOX_GROUPS = [
+  { label: "Drums", range: [1, 12] },
+  { label: "Instruments", range: [13, 25] },
+  { label: "Talk Backs", range: [26, 27] },
+  { label: "Vocals", range: [28, 36] },
+  { label: "Wireless", range: [37, 40] },
+  { label: "Crowd", range: [41, 44] },
+];
+
+const isIEM = (dest) => {
+  const d = (dest || "").toLowerCase();
+  return d.includes("in-ear") || d.includes("in ear");
+};
+
 function IOListView({ ioConfig, setIoConfig }) {
   const [tab, setTab] = useState("stageBox");
   const [draft, setDraft] = useState(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [stageBoxSub, setStageBoxSub] = useState("inputs");
 
   const editing = draft !== null;
   const displayConfig = editing ? draft : ioConfig;
   
-  const tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
+  const tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "danteRouting", label: "Dante" }];
   
   const updateChannel = (tabKey, index, field, value) => {
     const updated = JSON.parse(JSON.stringify(draft));
@@ -1960,6 +1975,14 @@ function IOListView({ ioConfig, setIoConfig }) {
     setDraft(updated);
   };
   
+  const renderGroupHeader = (label, count) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px 4px", marginTop: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: S.textMuted }}>{label}</div>
+      <div style={{ flex: 1, height: 1, background: S.cardBorder }} />
+      <div style={{ fontSize: 11, color: S.textDim }}>{count}</div>
+    </div>
+  );
+
   return (
     <div style={{ padding: "12px 16px 80px" }}>
       {/* Tab bar + Edit/Reset controls */}
@@ -1997,6 +2020,18 @@ function IOListView({ ioConfig, setIoConfig }) {
             }}>Cancel</button>
           )}
         </div>
+        {tab === "stageBox" && (
+          <div style={{ display: "flex", gap: 0, marginTop: 8, background: "rgba(255,235,210,0.04)", borderRadius: 8, border: `1px solid ${S.cardBorder}`, padding: 2 }}>
+            {[{ id: "inputs", label: "Inputs" }, { id: "outputs", label: "Outputs" }].map(sub => (
+              <button key={sub.id} onClick={() => setStageBoxSub(sub.id)} style={{
+                flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                cursor: "pointer", border: "none", fontFamily: S.sans,
+                background: stageBoxSub === sub.id ? S.accentGlow : "transparent",
+                color: stageBoxSub === sub.id ? S.accentText : S.textMuted,
+              }}>{sub.label}</button>
+            ))}
+          </div>
+        )}
       </div>
 
       {showSaveModal && (
@@ -2014,49 +2049,90 @@ function IOListView({ ioConfig, setIoConfig }) {
         </div>
       )}
       
-      {/* Stage Box Inputs */}
-      {tab === "stageBox" && displayConfig.stageBox.channels.map((ch, i) => (
-        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
-          <div style={{ minWidth: 32, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: isDuplicateChannel("stageBox", i) ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.1)", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono }}>
-            {editing ? (
-              <input type="text" value={ch.ch} onChange={e => updateChannel("stageBox", i, "ch", e.target.value)}
-                onBlur={() => handleChannelBlur("stageBox")}
-                style={{ width: 32, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono, outline: "none" }} />
-            ) : ch.ch}
-          </div>
-          <div style={{ flex: 1 }}>
-            {editing ? (
+      {/* Stage Box — Inputs sub-view */}
+      {tab === "stageBox" && stageBoxSub === "inputs" && (() => {
+        const channels = displayConfig.stageBox.channels;
+        const indexedChannels = channels.map((ch, i) => ({ ...ch, _origIndex: i }));
+        const grouped = STAGE_BOX_GROUPS.map(g => ({
+          ...g,
+          channels: indexedChannels.filter(ch => {
+            const num = parseInt(ch.ch, 10);
+            return !isNaN(num) && num >= g.range[0] && num <= g.range[1];
+          })
+        }));
+        const assignedIndices = new Set(grouped.flatMap(g => g.channels.map(c => c._origIndex)));
+        const otherChannels = indexedChannels.filter(ch => !assignedIndices.has(ch._origIndex));
+
+        const renderInput = (ch) => {
+          const i = ch._origIndex;
+          return (
+            <div key={`sb-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+              <div style={{ minWidth: 32, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: isDuplicateChannel("stageBox", i) ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.1)", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono }}>
+                {editing ? (
+                  <input type="text" value={ch.ch} onChange={e => updateChannel("stageBox", i, "ch", e.target.value)}
+                    onBlur={() => handleChannelBlur("stageBox")}
+                    style={{ width: 32, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono, outline: "none" }} />
+                ) : ch.ch}
+              </div>
+              <div style={{ flex: 1 }}>
+                {editing ? (
+                  <>
+                    <input value={ch.label} onChange={e => updateChannel("stageBox", i, "label", e.target.value)}
+                      style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                    <input value={ch.notes} onChange={e => updateChannel("stageBox", i, "notes", e.target.value)} placeholder="Notes..."
+                      style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                  </>
+                ) : (
+                  <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>{ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}</>
+                )}
+              </div>
+              {editing ? (
+                <select value={ch.type} onChange={e => updateChannel("stageBox", i, "type", e.target.value)}
+                  style={{ background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 4, color: S.textDim, fontSize: 11, padding: "2px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
+                  <option value="XLR">XLR</option>
+                  <option value="DI/XLR">DI/XLR</option>
+                  <option value="Line">Line</option>
+                  <option value="1/4">1/4"</option>
+                </select>
+              ) : (
+                <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
+              )}
+              {editing && (
+                <button onClick={() => removeChannel("stageBox", i)} style={{
+                  background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+                  borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+                }}>✕</button>
+              )}
+            </div>
+          );
+        };
+
+        return (
+          <>
+            {grouped.map(g => g.channels.length > 0 && (
+              <React.Fragment key={g.label}>
+                {renderGroupHeader(g.label, g.channels.length)}
+                {g.channels.map(renderInput)}
+              </React.Fragment>
+            ))}
+            {otherChannels.length > 0 && (
               <>
-                <input value={ch.label} onChange={e => updateChannel("stageBox", i, "label", e.target.value)}
-                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
-                <input value={ch.notes} onChange={e => updateChannel("stageBox", i, "notes", e.target.value)} placeholder="Notes..."
-                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                {renderGroupHeader("Other", otherChannels.length)}
+                {otherChannels.map(renderInput)}
               </>
-            ) : (
-              <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>{ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}</>
             )}
-          </div>
-          {editing ? (
-            <select value={ch.type} onChange={e => updateChannel("stageBox", i, "type", e.target.value)}
-              style={{ background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 4, color: S.textDim, fontSize: 11, padding: "2px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
-              <option value="XLR">XLR</option>
-              <option value="DI/XLR">DI/XLR</option>
-              <option value="Line">Line</option>
-              <option value="1/4">1/4"</option>
-            </select>
-          ) : (
-            <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
-          )}
-          {editing && (
-            <button onClick={() => removeChannel("stageBox", i)} style={{
-              background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
-              borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
-            }}>✕</button>
-          )}
-        </div>
-      ))}
-      
-      {tab === "stageBox" && <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{displayConfig.stageBox.channels.length} channels</div>}
+            {editing && (
+              <button onClick={() => addChannel("stageBox")} style={{
+                width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+                background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+                color: S.textMuted
+              }}>+ Add Input</button>
+            )}
+            <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{channels.length} channels</div>
+          </>
+        );
+      })()}
       
       {/* Wing Direct Inputs */}
       {tab === "wingInputs" && displayConfig.wingInputs && displayConfig.wingInputs.channels.map((ch, i) => (
@@ -2089,43 +2165,79 @@ function IOListView({ ioConfig, setIoConfig }) {
         </div>
       ))}
       
-      {/* Outputs */}
-      {tab === "outputs" && displayConfig.outputs.channels.map((ch, i) => (
-        <div key={i} style={{ padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ minWidth: 60, fontSize: 12, color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, background: isDuplicateChannel("outputs", i) ? "rgba(239,68,68,0.15)" : S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
-              {editing ? (
-                <input value={ch.ch} onChange={e => updateChannel("outputs", i, "ch", e.target.value)}
-                  style={{ width: 60, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, fontSize: 12, fontWeight: 600, fontFamily: S.mono, outline: "none" }} />
-              ) : ch.ch}
+      {/* Stage Box — Outputs sub-view */}
+      {tab === "stageBox" && stageBoxSub === "outputs" && (() => {
+        const channels = displayConfig.outputs.channels;
+        const indexedChannels = channels.map((ch, i) => ({ ...ch, _origIndex: i }));
+        const iemChannels = indexedChannels.filter(ch => isIEM(ch.destination));
+        const infraChannels = indexedChannels.filter(ch => !isIEM(ch.destination));
+
+        const renderOutput = (ch) => {
+          const i = ch._origIndex;
+          return (
+            <div key={`out-${i}`} style={{ padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ minWidth: 60, fontSize: 12, color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, background: isDuplicateChannel("outputs", i) ? "rgba(239,68,68,0.15)" : S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
+                  {editing ? (
+                    <input value={ch.ch} onChange={e => updateChannel("outputs", i, "ch", e.target.value)}
+                      style={{ width: 60, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, fontSize: 12, fontWeight: 600, fontFamily: S.mono, outline: "none" }} />
+                  ) : ch.ch}
+                </div>
+                <div style={{ flex: 1 }}>
+                  {editing ? (
+                    <>
+                      <input value={ch.label} onChange={e => updateChannel("outputs", i, "label", e.target.value)}
+                        style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                      <input value={ch.destination} onChange={e => updateChannel("outputs", i, "destination", e.target.value)} placeholder="Destination..."
+                        style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                      <input value={ch.inEarSnake || ""} onChange={e => updateChannel("outputs", i, "inEarSnake", e.target.value)} placeholder="In-ear snake..."
+                        style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
+                      {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
+                      {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+                    </>
+                  )}
+                </div>
+                {editing && (
+                  <button onClick={() => removeChannel("outputs", i)} style={{
+                    background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+                    borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+                  }}>✕</button>
+                )}
+              </div>
             </div>
-            <div style={{ flex: 1 }}>
-              {editing ? (
-                <>
-                  <input value={ch.label} onChange={e => updateChannel("outputs", i, "label", e.target.value)}
-                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
-                  <input value={ch.destination} onChange={e => updateChannel("outputs", i, "destination", e.target.value)} placeholder="Destination..."
-                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
-                  <input value={ch.inEarSnake || ""} onChange={e => updateChannel("outputs", i, "inEarSnake", e.target.value)} placeholder="In-ear snake..."
-                    style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
-                </>
-              ) : (
-                <>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
-                  {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
-                  {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
-                </>
-              )}
-            </div>
-            {editing && (
-              <button onClick={() => removeChannel("outputs", i)} style={{
-                background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
-                borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
-              }}>✕</button>
+          );
+        };
+
+        return (
+          <>
+            {iemChannels.length > 0 && (
+              <>
+                {renderGroupHeader("In-Ear Monitors", iemChannels.length)}
+                {iemChannels.map(renderOutput)}
+              </>
             )}
-          </div>
-        </div>
-      ))}
+            {infraChannels.length > 0 && (
+              <>
+                {renderGroupHeader("Infrastructure", infraChannels.length)}
+                {infraChannels.map(renderOutput)}
+              </>
+            )}
+            {editing && (
+              <button onClick={() => addChannel("outputs")} style={{
+                width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+                background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+                color: S.textMuted
+              }}>+ Add Output</button>
+            )}
+            <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{channels.length} outputs</div>
+          </>
+        );
+      })()}
       
       {/* Dante Routing */}
       {tab === "danteRouting" && displayConfig.danteRouting.routes.map((r, i) => (
@@ -2171,14 +2283,13 @@ function IOListView({ ioConfig, setIoConfig }) {
         </div>
       ))}
       
-      {/* Add channel button (only in edit mode) */}
-      {editing && (
-        <button onClick={() => addChannel(tab)} style={{
+      {editing && tab === "danteRouting" && (
+        <button onClick={() => addChannel("danteRouting")} style={{
           width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
           cursor: "pointer", fontFamily: S.sans, marginTop: 8,
           background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
           color: S.textMuted
-        }}>+ Add {tab === "stageBox" ? "Input" : tab === "wingInputs" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
+        }}>+ Add Route</button>
       )}
     </div>
   );

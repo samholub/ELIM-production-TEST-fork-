@@ -1,0 +1,245 @@
+REPLIT TASK PROMPT — I/O Page Redesign: Stage Box Grouping + Outputs Merge + Sub-Toggle
+
+This is a single-file React app (index.html). All changes are inside the IOListView component (around lines 1889–2185) and a new constant just above it. No data model changes — everything here is render-side only. The DEFAULT_IO_LINE_LIST structure, Firebase schema, and all editing/draft logic stay exactly as they are.
+Overview: The Midas DL251 stage box has both input jacks and output jacks. Currently inputs and outputs are on separate tabs, which hides the fact that they're on the same physical hardware. We're merging them under one "Stage Box" tab with a sub-toggle (Inputs / Outputs), adding group headers to both sides, and dropping the standalone Outputs tab. Final tabs: Stage Box, Wing, Dante (3 tabs, down from 4).
+
+1. Add constants above IOListView
+Place these just above the function IOListView definition (around line 1889):
+javascriptconst STAGE_BOX_GROUPS = [
+  { label: "Drums", range: [1, 12] },
+  { label: "Instruments", range: [13, 25] },
+  { label: "Talk Backs", range: [26, 27] },
+  { label: "Vocals", range: [28, 36] },
+  { label: "Wireless", range: [37, 40] },
+  { label: "Crowd", range: [41, 44] },
+];
+
+const isIEM = (dest) => {
+  const d = (dest || "").toLowerCase();
+  return d.includes("in-ear") || d.includes("in ear");
+};
+
+2. Update IOListView state and tabs
+At the top of IOListView, add one new state variable right after the existing useState lines (after line ~1891):
+javascriptconst [stageBoxSub, setStageBoxSub] = useState("inputs");
+Change the tabs array (line ~1897) from:
+javascriptconst tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "outputs", label: "Outputs" }, { id: "danteRouting", label: "Dante" }];
+To:
+javascriptconst tabs = [{ id: "stageBox", label: "Stage Box" }, { id: "wingInputs", label: "Wing" }, { id: "danteRouting", label: "Dante" }];
+
+3. Add a shared renderGroupHeader function
+Inside IOListView, just before the return ( statement, add:
+javascriptconst renderGroupHeader = (label, count) => (
+  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 4px 4px", marginTop: 8 }}>
+    <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: S.textMuted }}>{label}</div>
+    <div style={{ flex: 1, height: 1, background: S.cardBorder }} />
+    <div style={{ fontSize: 11, color: S.textDim }}>{count}</div>
+  </div>
+);
+
+4. Add the sub-toggle inside the tab bar area
+Right after the closing </div> of the edit button row (after the Cancel button, around line ~2000), add the sub-toggle. It only renders when the Stage Box tab is selected:
+jsx{tab === "stageBox" && (
+  <div style={{ display: "flex", gap: 0, marginTop: 8, background: "rgba(255,235,210,0.04)", borderRadius: 8, border: `1px solid ${S.cardBorder}`, padding: 2 }}>
+    {[{ id: "inputs", label: "Inputs" }, { id: "outputs", label: "Outputs" }].map(sub => (
+      <button key={sub.id} onClick={() => setStageBoxSub(sub.id)} style={{
+        flex: 1, padding: "6px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+        cursor: "pointer", border: "none", fontFamily: S.sans,
+        background: stageBoxSub === sub.id ? S.accentGlow : "transparent",
+        color: stageBoxSub === sub.id ? S.accentText : S.textMuted,
+      }}>{sub.label}</button>
+    ))}
+  </div>
+)}
+
+5. Replace the Stage Box rendering block
+Replace everything from the {/* Stage Box Inputs */} comment (line ~2017) through and including the channel count line (line ~2059) with:
+jsx{/* Stage Box — Inputs sub-view */}
+{tab === "stageBox" && stageBoxSub === "inputs" && (() => {
+  const channels = displayConfig.stageBox.channels;
+  const indexedChannels = channels.map((ch, i) => ({ ...ch, _origIndex: i }));
+  const grouped = STAGE_BOX_GROUPS.map(g => ({
+    ...g,
+    channels: indexedChannels.filter(ch => {
+      const num = parseInt(ch.ch, 10);
+      return !isNaN(num) && num >= g.range[0] && num <= g.range[1];
+    })
+  }));
+  const assignedIndices = new Set(grouped.flatMap(g => g.channels.map(c => c._origIndex)));
+  const otherChannels = indexedChannels.filter(ch => !assignedIndices.has(ch._origIndex));
+
+  const renderInput = (ch) => {
+    const i = ch._origIndex;
+    return (
+      <div key={`sb-${i}`} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+        <div style={{ minWidth: 32, height: 28, borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", background: isDuplicateChannel("stageBox", i) ? "rgba(239,68,68,0.15)" : "rgba(16,185,129,0.1)", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono }}>
+          {editing ? (
+            <input type="text" value={ch.ch} onChange={e => updateChannel("stageBox", i, "ch", e.target.value)}
+              onBlur={() => handleChannelBlur("stageBox")}
+              style={{ width: 32, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("stageBox", i) ? "#EF4444" : S.success, fontSize: 12, fontWeight: 700, fontFamily: S.mono, outline: "none" }} />
+          ) : ch.ch}
+        </div>
+        <div style={{ flex: 1 }}>
+          {editing ? (
+            <>
+              <input value={ch.label} onChange={e => updateChannel("stageBox", i, "label", e.target.value)}
+                style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+              <input value={ch.notes} onChange={e => updateChannel("stageBox", i, "notes", e.target.value)} placeholder="Notes..."
+                style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+            </>
+          ) : (
+            <><div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>{ch.notes && <div style={{ fontSize: 12, color: S.textMuted }}>{ch.notes}</div>}</>
+          )}
+        </div>
+        {editing ? (
+          <select value={ch.type} onChange={e => updateChannel("stageBox", i, "type", e.target.value)}
+            style={{ background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 4, color: S.textDim, fontSize: 11, padding: "2px 6px", fontFamily: S.mono, cursor: "pointer", outline: "none" }}>
+            <option value="XLR">XLR</option>
+            <option value="DI/XLR">DI/XLR</option>
+            <option value="Line">Line</option>
+            <option value="1/4">1/4"</option>
+          </select>
+        ) : (
+          <div style={{ fontSize: 11, color: S.textDim, background: "rgba(255,235,210,0.04)", padding: "2px 8px", borderRadius: 4, fontFamily: S.mono }}>{ch.type}</div>
+        )}
+        {editing && (
+          <button onClick={() => removeChannel("stageBox", i)} style={{
+            background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+            borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+          }}>✕</button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {grouped.map(g => g.channels.length > 0 && (
+        <React.Fragment key={g.label}>
+          {renderGroupHeader(g.label, g.channels.length)}
+          {g.channels.map(renderInput)}
+        </React.Fragment>
+      ))}
+      {otherChannels.length > 0 && (
+        <>
+          {renderGroupHeader("Other", otherChannels.length)}
+          {otherChannels.map(renderInput)}
+        </>
+      )}
+      {editing && (
+        <button onClick={() => addChannel("stageBox")} style={{
+          width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+          cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+          background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+          color: S.textMuted
+        }}>+ Add Input</button>
+      )}
+      <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{channels.length} channels</div>
+    </>
+  );
+})()}
+
+6. Replace the Outputs rendering block
+Replace everything from the {/* Outputs */} comment (line ~2092) through the end of the outputs .map() closing (line ~2128) with:
+jsx{/* Stage Box — Outputs sub-view */}
+{tab === "stageBox" && stageBoxSub === "outputs" && (() => {
+  const channels = displayConfig.outputs.channels;
+  const indexedChannels = channels.map((ch, i) => ({ ...ch, _origIndex: i }));
+  const iemChannels = indexedChannels.filter(ch => isIEM(ch.destination));
+  const infraChannels = indexedChannels.filter(ch => !isIEM(ch.destination));
+
+  const renderOutput = (ch) => {
+    const i = ch._origIndex;
+    return (
+      <div key={`out-${i}`} style={{ padding: "12px 14px", background: S.card, border: `1px solid ${S.cardBorder}`, borderRadius: 8, marginBottom: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ minWidth: 60, fontSize: 12, color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, background: isDuplicateChannel("outputs", i) ? "rgba(239,68,68,0.15)" : S.accentGlow, padding: "3px 8px", borderRadius: 4, fontFamily: S.mono, textAlign: "center", fontWeight: 600 }}>
+            {editing ? (
+              <input value={ch.ch} onChange={e => updateChannel("outputs", i, "ch", e.target.value)}
+                style={{ width: 60, textAlign: "center", background: "transparent", border: "none", color: isDuplicateChannel("outputs", i) ? "#EF4444" : S.accentText, fontSize: 12, fontWeight: 600, fontFamily: S.mono, outline: "none" }} />
+            ) : ch.ch}
+          </div>
+          <div style={{ flex: 1 }}>
+            {editing ? (
+              <>
+                <input value={ch.label} onChange={e => updateChannel("outputs", i, "label", e.target.value)}
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.text, fontSize: 14, fontWeight: 600, padding: "4px 8px", marginBottom: 4, outline: "none", fontFamily: S.sans }} />
+                <input value={ch.destination} onChange={e => updateChannel("outputs", i, "destination", e.target.value)} placeholder="Destination..."
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+                <input value={ch.inEarSnake || ""} onChange={e => updateChannel("outputs", i, "inEarSnake", e.target.value)} placeholder="In-ear snake..."
+                  style={{ width: "100%", background: "rgba(255,235,210,0.04)", border: `1px solid ${S.cardBorder}`, borderRadius: 6, color: S.textMuted, fontSize: 12, padding: "3px 8px", outline: "none", fontFamily: S.sans }} />
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{ch.label}</div>
+                {ch.destination && <div style={{ fontSize: 12, color: S.textMuted }}>→ {ch.destination}</div>}
+                {ch.inEarSnake && <div style={{ fontSize: 11, color: S.accent, fontFamily: S.mono }}>Snake: {ch.inEarSnake}</div>}
+              </>
+            )}
+          </div>
+          {editing && (
+            <button onClick={() => removeChannel("outputs", i)} style={{
+              background: "rgba(232,93,93,0.08)", border: "1px solid rgba(232,93,93,0.2)",
+              borderRadius: 6, color: "#E88A8A", fontSize: 16, padding: "2px 8px", cursor: "pointer", fontFamily: S.sans
+            }}>✕</button>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      {iemChannels.length > 0 && (
+        <>
+          {renderGroupHeader("In-Ear Monitors", iemChannels.length)}
+          {iemChannels.map(renderOutput)}
+        </>
+      )}
+      {infraChannels.length > 0 && (
+        <>
+          {renderGroupHeader("Infrastructure", infraChannels.length)}
+          {infraChannels.map(renderOutput)}
+        </>
+      )}
+      {editing && (
+        <button onClick={() => addChannel("outputs")} style={{
+          width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+          cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+          background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+          color: S.textMuted
+        }}>+ Add Output</button>
+      )}
+      <div style={{ fontSize: 12, color: S.textMuted, textAlign: "center", marginTop: 8, marginBottom: 4 }}>{channels.length} outputs</div>
+    </>
+  );
+})()}
+
+7. Update the Add button at the bottom
+Replace the existing generic add button block (lines ~2174–2182):
+jsx{editing && (
+  <button onClick={() => addChannel(tab)} style={{
+    width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+    cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+    background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+    color: S.textMuted
+  }}>+ Add {tab === "stageBox" ? "Input" : tab === "wingInputs" ? "Input" : tab === "outputs" ? "Output" : "Route"}</button>
+)}
+With (only Dante needs a bottom add button now — Stage Box inputs/outputs and Wing all have their own inline):
+jsx{editing && tab === "danteRouting" && (
+  <button onClick={() => addChannel("danteRouting")} style={{
+    width: "100%", padding: "10px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+    cursor: "pointer", fontFamily: S.sans, marginTop: 8,
+    background: "rgba(255,235,210,0.04)", border: `1px dashed ${S.cardBorder}`,
+    color: S.textMuted
+  }}>+ Add Route</button>
+)}
+
+What NOT to change
+
+DEFAULT_IO_LINE_LIST — no fields added, removed, or renamed. outputs stays as its own top-level key, we just render it under the Stage Box tab now
+updateChannel, sortInputsByChannel, isDuplicateChannel, handleChannelBlur, addChannel, removeChannel — all logic functions untouched. addChannel("outputs") and updateChannel("outputs", ...) still work because the data key hasn't changed
+Draft/save flow (draft, setDraft, showSaveModal) — completely untouched
+Dante tab rendering — completely untouched
+Wing tab rendering (the {tab === "wingInputs" && ...} block) — completely untouched
+The save modal — completely untouched
